@@ -17,13 +17,15 @@ const VISION_DIR = new Directory(Paths.document, 'vision-board');
 // spec's { uri: string } model intact; getImageSource() resolves the sentinel.
 const BUNDLED_PREFIX = 'bundled:';
 
+// Filenames are lowercase and space-free because Metro's asset-extension
+// matching is case-sensitive — an uppercase .JPG gets parsed as source code.
 const BUNDLED_ASSETS: Record<string, number> = {
-  img0618: require('@/assets/images/vision-board/IMG_0618.JPG'),
-  img0620: require('@/assets/images/vision-board/IMG_0620.JPG'),
-  successfulDecade: require('@/assets/images/vision-board/Successful Decade.jpeg'),
+  img0618: require('@/assets/images/vision-board/img_0618.jpg'),
+  img0620: require('@/assets/images/vision-board/img_0620.jpg'),
+  successfulDecade: require('@/assets/images/vision-board/successful-decade.jpeg'),
   ifNotNowWhen: require('@/assets/images/vision-board/if_not_now_when.jpg'),
-  disciplineQuotes: require('@/assets/images/vision-board/motivational discipline wallpaper quotes.jpg'),
-  dontGiveUp: require('@/assets/images/vision-board/what_happens_if_i_dont_give_up.jpg'),
+  disciplineQuotes: require('@/assets/images/vision-board/discipline-quotes.jpg'),
+  dontGiveUp: require('@/assets/images/vision-board/dont-give-up.jpg'),
 };
 
 export const BUNDLED_VISION_IMAGES: readonly VisionBoardImage[] = Object.keys(BUNDLED_ASSETS).map(
