@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,13 +9,15 @@ import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
+import { VisionImageGrid } from '@/components/vision-image-grid';
 import { Radius, Spacing } from '@/constants/theme';
 import { useOnboardingStatus } from '@/hooks/use-onboarding-status';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { createId } from '@/lib/id';
+import { BUNDLED_VISION_IMAGES, persistPickedImage } from '@/lib/images';
 import { PRESETS, instantiatePreset, type PresetDefinition } from '@/lib/presets';
 import { setItem } from '@/lib/storage';
-import type { FailurePoint, IfThenPlan } from '@/types/models';
+import type { FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
 
 type Selection = { failurePoint: FailurePoint; plan: IfThenPlan };
 
@@ -36,6 +39,8 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [selections, setSelections] = useState<Selection[]>([]);
   const [customLabel, setCustomLabel] = useState('');
+  // Bundled defaults start selected; the user can remove any of them or add their own.
+  const [images, setImages] = useState<VisionBoardImage[]>([...BUNDLED_VISION_IMAGES]);
 
   const togglePreset = (preset: PresetDefinition) => {
     setSelections((prev) => {
@@ -71,10 +76,21 @@ export default function OnboardingScreen() {
       prev.map((s) => (s.failurePoint.id === failurePointId ? { ...s, plan } : s))
     );
 
-  // Finish grows in steps 4-5 (images, times) and step 8 (notifications).
+  const pickImages = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    setImages((prev) => [...prev, ...result.assets.map(persistPickedImage)]);
+  };
+
+  // Finish grows in step 5 (times) and step 8 (notifications).
   const finish = async () => {
     await setItem('failurePoints', selections.map((s) => s.failurePoint));
     await setItem('plans', selections.map((s) => s.plan));
+    await setItem('visionBoardImages', images);
     await completeOnboarding();
   };
 
@@ -83,7 +99,9 @@ export default function OnboardingScreen() {
       ? selections.length > 0
       : step === 1
         ? selections.every((s) => isPlanFormValueValid(s.plan))
-        : true;
+        : step === 2
+          ? images.length >= 3
+          : true;
 
   const renderStep = () => {
     switch (step) {
@@ -165,7 +183,15 @@ export default function OnboardingScreen() {
       case 2:
         return (
           <View style={styles.stepBody}>
-            <ThemedText type="caption">Vision board setup lands in step 4 of the build.</ThemedText>
+            <ThemedText type="caption">
+              When a plan redirects you here, one of these images is shown full-screen. We added
+              some to start — remove any, or add your own. Keep at least 3.
+            </ThemedText>
+            <VisionImageGrid
+              images={images}
+              onRemove={(image) => setImages((prev) => prev.filter((i) => i.id !== image.id))}
+            />
+            <PrimaryButton label="Add your own" onPress={pickImages} />
           </View>
         );
       case 3:
