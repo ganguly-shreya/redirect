@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlanForm, isPlanFormValueValid } from '@/components/plan-form';
+import { TimePickerRow } from '@/components/time-picker-row';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
@@ -17,7 +18,7 @@ import { createId } from '@/lib/id';
 import { BUNDLED_VISION_IMAGES, persistPickedImage } from '@/lib/images';
 import { PRESETS, instantiatePreset, type PresetDefinition } from '@/lib/presets';
 import { setItem } from '@/lib/storage';
-import type { FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
+import type { CheckInTime, FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
 
 type Selection = { failurePoint: FailurePoint; plan: IfThenPlan };
 
@@ -41,6 +42,7 @@ export default function OnboardingScreen() {
   const [customLabel, setCustomLabel] = useState('');
   // Bundled defaults start selected; the user can remove any of them or add their own.
   const [images, setImages] = useState<VisionBoardImage[]>([...BUNDLED_VISION_IMAGES]);
+  const [times, setTimes] = useState<CheckInTime[]>([{ hour: 14, minute: 0 }]);
 
   const togglePreset = (preset: PresetDefinition) => {
     setSelections((prev) => {
@@ -86,11 +88,12 @@ export default function OnboardingScreen() {
     setImages((prev) => [...prev, ...result.assets.map(persistPickedImage)]);
   };
 
-  // Finish grows in step 5 (times) and step 8 (notifications).
+  // Finish grows in step 8 (notification scheduling).
   const finish = async () => {
     await setItem('failurePoints', selections.map((s) => s.failurePoint));
     await setItem('plans', selections.map((s) => s.plan));
     await setItem('visionBoardImages', images);
+    await setItem('checkInTimes', times);
     await completeOnboarding();
   };
 
@@ -197,7 +200,30 @@ export default function OnboardingScreen() {
       case 3:
         return (
           <View style={styles.stepBody}>
-            <ThemedText type="caption">Check-in times land in step 5 of the build.</ThemedText>
+            <ThemedText type="caption">
+              Redirect will nudge you at these times each day to ask if you&apos;re stuck. Pick 1 to
+              3 times.
+            </ThemedText>
+            {times.map((time, index) => (
+              <TimePickerRow
+                key={index}
+                time={time}
+                onChange={(next) =>
+                  setTimes((prev) => prev.map((t, i) => (i === index ? next : t)))
+                }
+                onRemove={
+                  times.length > 1
+                    ? () => setTimes((prev) => prev.filter((_, i) => i !== index))
+                    : undefined
+                }
+              />
+            ))}
+            {times.length < 3 && (
+              <PrimaryButton
+                label="Add another time"
+                onPress={() => setTimes((prev) => [...prev, { hour: 9, minute: 0 }])}
+              />
+            )}
           </View>
         );
       default:
