@@ -16,6 +16,7 @@ import { useOnboardingStatus } from '@/hooks/use-onboarding-status';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { createId } from '@/lib/id';
 import { BUNDLED_VISION_IMAGES, persistPickedImage } from '@/lib/images';
+import { requestNotificationPermissions, rescheduleCheckIns } from '@/lib/notifications';
 import { PRESETS, instantiatePreset, type PresetDefinition } from '@/lib/presets';
 import { setItem } from '@/lib/storage';
 import type { CheckInTime, FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
@@ -88,12 +89,16 @@ export default function OnboardingScreen() {
     setImages((prev) => [...prev, ...result.assets.map(persistPickedImage)]);
   };
 
-  // Finish grows in step 8 (notification scheduling).
   const finish = async () => {
     await setItem('failurePoints', selections.map((s) => s.failurePoint));
     await setItem('plans', selections.map((s) => s.plan));
     await setItem('visionBoardImages', images);
     await setItem('checkInTimes', times);
+    // Schedule even if permission is denied: the schedule is harmless without
+    // display permission, and starts working if the user later grants it in
+    // system settings.
+    await requestNotificationPermissions();
+    await rescheduleCheckIns(times);
     await completeOnboarding();
   };
 
