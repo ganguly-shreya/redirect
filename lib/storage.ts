@@ -58,6 +58,14 @@ export async function removeFromCollection<K extends CollectionKey>(
   await setItem(key, items.filter((item) => item.id !== id) as StorageSchema[K]);
 }
 
+// Dev-only full reset: removes every key this app owns, including the
+// schemaVersion stamp, so the next launch is indistinguishable from a fresh
+// install. Image files on disk are lib/images.ts#deleteAllImageFiles's job.
+export async function clearAllData(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  await AsyncStorage.multiRemove(keys.filter((key) => key.startsWith(KEY_PREFIX)));
+}
+
 // Ordered map of migrations to run when the stored version is older than
 // SCHEMA_VERSION, e.g. { 2: migrateV1toV2 }. V2 shape changes land here instead
 // of as ad-hoc parsing guards scattered through the app.

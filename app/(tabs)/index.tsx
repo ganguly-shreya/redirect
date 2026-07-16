@@ -1,19 +1,50 @@
 import { format, isToday, parseISO, set } from 'date-fns';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { getCollection, getItem } from '@/lib/storage';
+import { useOnboardingStatus } from '@/hooks/use-onboarding-status';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { deleteAllImageFiles } from '@/lib/images';
+import { cancelAllNotifications } from '@/lib/notifications';
+import { clearAllData, getCollection, getItem } from '@/lib/storage';
 import type { CheckInTime } from '@/types/models';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { resetOnboarding } = useOnboardingStatus();
+  const danger = useThemeColor({}, 'danger');
   const [times, setTimes] = useState<CheckInTime[]>([]);
   const [todayCount, setTodayCount] = useState(0);
+
+  // Dev-only escape hatch for re-testing the full flow: wipes storage, picked
+  // image files, and scheduled notifications, then flips the onboarding gate —
+  // the router lands back on step 1 without reinstalling Expo Go.
+  const confirmDevReset = () => {
+    Alert.alert(
+      'Reset all data?',
+      'Goals, plans, logs, images, and scheduled notifications are wiped and onboarding starts over. Dev only.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await cancelAllNotifications();
+            deleteAllImageFiles();
+            await clearAllData();
+            // Flips the Stack.Protected gate; also re-stamps hasOnboarded=false,
+            // which is equivalent to a fresh install for the gate's purposes.
+            await resetOnboarding();
+          },
+        },
+      ]
+    );
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -50,6 +81,16 @@ export default function HomeScreen() {
             Redirected {todayCount} {todayCount === 1 ? 'time' : 'times'} today
           </ThemedText>
         )}
+        {__DEV__ && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={confirmDevReset}
+            style={styles.devReset}>
+            <ThemedText type="caption" style={{ color: danger }}>
+              Reset all data (dev)
+            </ThemedText>
+          </Pressable>
+        )}
       </View>
     </ThemedView>
   );
@@ -72,5 +113,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
     paddingBottom: Spacing.sm,
+  },
+  devReset: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
 });

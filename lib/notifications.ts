@@ -32,6 +32,10 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return requested.granted;
 }
 
+export async function cancelAllNotifications(): Promise<void> {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
 type RescheduleInput = {
   checkInTimes: CheckInTime[];
   recapTime: CheckInTime;

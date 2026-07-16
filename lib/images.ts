@@ -55,6 +55,12 @@ export function deleteImageFile(image: VisionBoardImage): void {
   if (file.exists) file.delete();
 }
 
+// Dev-only full reset: wipes every user-picked image copy. Bundled assets live
+// in the app binary and are unaffected.
+export function deleteAllImageFiles(): void {
+  if (VISION_DIR.exists) VISION_DIR.delete();
+}
+
 export function getImageSource(image: VisionBoardImage): ImageSourcePropType {
   if (isBundledImage(image)) {
     const key = image.uri.slice(BUNDLED_PREFIX.length);

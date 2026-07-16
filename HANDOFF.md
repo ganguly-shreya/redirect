@@ -28,7 +28,9 @@ app/
                            in-the-moment Helped/Didn't chips; timer ends in "Ship it!"
   (tabs)/
     _layout.tsx            Bottom tabs: Home, Plans, Goals, Retro (Ionicons)
-    index.tsx              Home: big "I'm Stuck" button, today's check-in times + count
+    index.tsx              Home: big "I'm Stuck" button, today's check-in times + count,
+                           __DEV__-only "Reset all data" (wipes storage/images/notifications
+                           and flips the onboarding gate — full re-test without reinstalling)
     plans.tsx              CRUD for FailurePoints + IfThenPlans (single-draft edit model);
                            each pattern must link to ≥1 goal (checklist in the draft)
     goals.tsx              Goals CRUD (replaces V1 vision-board tab): why, target date,
@@ -193,7 +195,9 @@ handle the new type until you do.
 
 No test suite — run this manually in Expo Go after any nontrivial change:
 
-1. **Reset:** delete the app from Expo Go so onboarding shows.
+1. **Reset:** tap "Reset all data (dev)" at the bottom of Home (dev builds only) —
+   storage, picked image files, and scheduled notifications are wiped and onboarding
+   shows immediately. (Fallback: delete/reinstall Expo Go.)
 2. **Onboard:** add a goal (title, why, target date; select images; pick a quote; link two
    failure modes — one preset, one custom) → step 2 shows a plan per linked pattern →
    step 3 set one check-in time ~2 min out → step 4 set a recap time ~4 min out →
