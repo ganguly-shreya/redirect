@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { format, parseISO } from 'date-fns';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { OutcomeChips } from '@/components/outcome-chips';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -17,24 +18,6 @@ export function TriggerLogRow({ log, label, onOutcome }: TriggerLogRowProps) {
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const icon = useThemeColor({}, 'icon');
-  const success = useThemeColor({}, 'success');
-  const danger = useThemeColor({}, 'danger');
-
-  const chip = (outcome: TriggerOutcome, text: string, color: string) => {
-    const selected = log.outcome === outcome;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => onOutcome(outcome)}
-        style={[styles.chip, { borderColor: selected ? color : border }]}>
-        <ThemedText
-          type="caption"
-          style={selected ? { color, fontWeight: '600' } : undefined}>
-          {text}
-        </ThemedText>
-      </Pressable>
-    );
-  };
 
   return (
     <View style={[styles.row, { backgroundColor: card, borderColor: border }]}>
@@ -49,10 +32,7 @@ export function TriggerLogRow({ log, label, onOutcome }: TriggerLogRowProps) {
           <ThemedText type="caption">{format(parseISO(log.firedAt), 'EEE p')}</ThemedText>
         </View>
       </View>
-      <View style={styles.chips}>
-        {chip('helped', 'Helped', success)}
-        {chip('didNotHelp', "Didn't", danger)}
-      </View>
+      <OutcomeChips outcome={log.outcome} onOutcome={onOutcome} />
     </View>
   );
 }
@@ -74,15 +54,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-  },
-  chips: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  chip: {
-    borderWidth: 1,
-    borderRadius: Radius.card,
-    paddingHorizontal: Spacing.sm + Spacing.xs,
-    paddingVertical: Spacing.xs,
   },
 });

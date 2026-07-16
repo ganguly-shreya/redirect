@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CountdownTimer } from '@/components/countdown-timer';
+import { OutcomeChips } from '@/components/outcome-chips';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -16,10 +17,18 @@ import {
   logTriggerFired,
   pickGoalRedirectContent,
   pickRandomVisionImage,
+  setTriggerOutcome,
   type GoalRedirectContent,
 } from '@/lib/plan-engine';
 import { getCollection } from '@/lib/storage';
-import type { FailurePoint, Goal, IfThenPlan, VisionBoardImage } from '@/types/models';
+import type {
+  FailurePoint,
+  Goal,
+  IfThenPlan,
+  TriggerLog,
+  TriggerOutcome,
+  VisionBoardImage,
+} from '@/types/models';
 
 function formatTargetDate(goal: Goal): string {
   const days = differenceInCalendarDays(parseISO(goal.targetDate), new Date());
@@ -41,10 +50,15 @@ export default function ExecuteScreen() {
   const [goalContent, setGoalContent] = useState<GoalRedirectContent | null>(null);
   const [visionImage, setVisionImage] = useState<VisionBoardImage | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // The log written for this run, so the user can tag Helped/Didn't in the
+  // moment instead of later in Retro.
+  const [log, setLog] = useState<TriggerLog | null>(null);
   const tint = useThemeColor({}, 'tint');
-  // Ref guard: React Compiler / dev StrictMode can double-run effects, which
-  // would otherwise write two TriggerLogs per execution.
+  // Ref guards: React Compiler / dev StrictMode can double-run effects, which
+  // would otherwise write two TriggerLogs per execution. logRef carries the
+  // written log across the doubled effects so the second run can surface it.
   const loggedRef = useRef(false);
+  const logRef = useRef<TriggerLog | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,8 +101,12 @@ export default function ExecuteScreen() {
 
       if (!loggedRef.current) {
         loggedRef.current = true;
-        await logTriggerFired(found.id, source === 'scheduled' ? 'scheduled' : 'manual');
+        logRef.current = await logTriggerFired(
+          found.id,
+          source === 'scheduled' ? 'scheduled' : 'manual'
+        );
       }
+      if (!cancelled) setLog(logRef.current);
     })();
     return () => {
       cancelled = true;
@@ -97,6 +115,12 @@ export default function ExecuteScreen() {
 
   // Pops the execute fullScreenModal and the stuck modal in one go.
   const done = () => router.dismissAll();
+
+  const markOutcome = async (outcome: TriggerOutcome) => {
+    if (!log) return;
+    await setTriggerOutcome(log.id, outcome);
+    setLog({ ...log, outcome });
+  };
 
   if (notFound) {
     return (
@@ -248,6 +272,12 @@ export default function ExecuteScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {renderAction()}
       <View style={styles.footer}>
+        {log && (
+          <View style={styles.outcomeRow}>
+            <ThemedText type="caption">Did this help?</ThemedText>
+            <OutcomeChips outcome={log.outcome} onOutcome={markOutcome} />
+          </View>
+        )}
         <PrimaryButton label="Done" onPress={done} />
       </View>
     </ThemedView>
@@ -303,5 +333,12 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: Spacing.screen,
+    gap: Spacing.md,
+  },
+  outcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
 });
