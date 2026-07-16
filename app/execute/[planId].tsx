@@ -53,6 +53,7 @@ export default function ExecuteScreen() {
   // The log written for this run, so the user can tag Helped/Didn't in the
   // moment instead of later in Retro.
   const [log, setLog] = useState<TriggerLog | null>(null);
+  const [timerDone, setTimerDone] = useState(false);
   const tint = useThemeColor({}, 'tint');
   // Ref guards: React Compiler / dev StrictMode can double-run effects, which
   // would otherwise write two TriggerLogs per execution. logRef carries the
@@ -77,7 +78,9 @@ export default function ExecuteScreen() {
       const foundFailurePoint = failurePoints.find((fp) => fp.id === found.failurePointId) ?? null;
       setFailurePoint(foundFailurePoint);
 
-      if (found.actionType === 'visionBoard') {
+      // visionBoard needs redirect content; timer needs an image for its
+      // "Ship it!" completion view — both load the goal-driven pick.
+      if (found.actionType === 'visionBoard' || found.actionType === 'timer') {
         const [images, goals, quotes] = await Promise.all([
           getCollection('visionBoardImages'),
           getCollection('goals'),
@@ -91,7 +94,7 @@ export default function ExecuteScreen() {
           ? pickGoalRedirectContent(foundFailurePoint, goals, images, quotes)
           : null;
         setGoalContent(content);
-        if (!content) {
+        if (!content || content.kind !== 'image') {
           const specific = found.actionConfig.imageId
             ? images.find((i) => i.id === found.actionConfig.imageId)
             : undefined;
@@ -135,17 +138,56 @@ export default function ExecuteScreen() {
 
   const renderAction = () => {
     switch (plan.actionType) {
-      case 'timer':
+      case 'timer': {
+        if (timerDone) {
+          // Progress over perfection: the timer ran its course — celebrate and
+          // push the user to ship instead of polishing.
+          const celebrationImage =
+            goalContent?.kind === 'image' ? goalContent.image : visionImage;
+          return (
+            <View style={[styles.fill, !celebrationImage && { backgroundColor: tint }]}>
+              {celebrationImage && (
+                <Image
+                  source={getImageSource(celebrationImage)}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={200}
+                />
+              )}
+              <View style={styles.scrim} />
+              <View style={[styles.overlay, styles.celebration]}>
+                <ThemedText
+                  type="title"
+                  lightColor="#FFFFFF"
+                  darkColor="#FFFFFF"
+                  style={styles.centerText}>
+                  Ship it! 🚀
+                </ThemedText>
+                <ThemedText
+                  type="subtitle"
+                  lightColor="#FFFFFF"
+                  darkColor="#FFFFFF"
+                  style={styles.centerText}>
+                  Progress over Perfection!
+                </ThemedText>
+              </View>
+            </View>
+          );
+        }
         return (
           <View style={styles.actionBody}>
             <ThemedText type="caption">{failurePoint?.label}</ThemedText>
             <ThemedText type="subtitle" style={styles.centerText}>
               {plan.triggerDescription}
             </ThemedText>
-            <CountdownTimer durationMinutes={plan.actionConfig.durationMinutes ?? 5} />
+            <CountdownTimer
+              durationMinutes={plan.actionConfig.durationMinutes ?? 5}
+              onComplete={() => setTimerDone(true)}
+            />
             <ThemedText type="caption">Stay with it until the timer ends.</ThemedText>
           </View>
         );
+      }
       case 'visionBoard': {
         // A block of white text reminding the user what they're working toward
         // and why — shared by the image overlay and the quote/goal cards.
@@ -327,6 +369,10 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 38,
     fontWeight: '600',
+  },
+  celebration: {
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   centerText: {
     textAlign: 'center',
