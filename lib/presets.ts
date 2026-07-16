@@ -1,8 +1,8 @@
 import { createId } from '@/lib/id';
-import type { FailurePoint, IfThenPlan } from '@/types/models';
+import type { FailurePoint, IfThenPlan, Quote } from '@/types/models';
 
 export type PresetDefinition = {
-  failurePoint: Omit<FailurePoint, 'id'>;
+  failurePoint: Omit<FailurePoint, 'id' | 'goalIds'>;
   suggestedPlan: Pick<IfThenPlan, 'triggerDescription' | 'actionType' | 'actionConfig'>;
 };
 
@@ -49,13 +49,33 @@ export const PRESETS: readonly PresetDefinition[] = [
   },
 ];
 
+// Quote texts offered during goal setup; like image bundling, ids are minted
+// per user at selection time (instantiateQuote) so stored quotes are plain data.
+export const PRESET_QUOTES: readonly string[] = [
+  'Done beats perfect.',
+  'Discipline is choosing between what you want now and what you want most.',
+  "You don't have to be great to start, but you have to start to be great.",
+  "A year from now you'll wish you had started today.",
+  'Progress over perfection.',
+  'The best time to plant a tree was 20 years ago. The second best time is now.',
+  'Small steps every day.',
+  'Future you is watching.',
+];
+
+export function instantiateQuote(text: string, isPreset: boolean): Quote {
+  return { id: createId(), text, isPreset };
+}
+
 // Presets are templates; ids are minted per user at selection time so a preset
 // can be removed and re-added, or customized, without colliding with stored data.
-export function instantiatePreset(preset: PresetDefinition): {
+export function instantiatePreset(
+  preset: PresetDefinition,
+  goalIds: string[] = []
+): {
   failurePoint: FailurePoint;
   plan: IfThenPlan;
 } {
-  const failurePoint: FailurePoint = { id: createId(), ...preset.failurePoint };
+  const failurePoint: FailurePoint = { id: createId(), goalIds: [...goalIds], ...preset.failurePoint };
   const plan: IfThenPlan = {
     id: createId(),
     failurePointId: failurePoint.id,

@@ -2,7 +2,9 @@ import { createId } from '@/lib/id';
 import { getCollection, upsertInCollection } from '@/lib/storage';
 import type {
   FailurePoint,
+  Goal,
   IfThenPlan,
+  Quote,
   TriggerLog,
   TriggerOutcome,
   TriggerSource,
@@ -33,6 +35,44 @@ export async function setTriggerOutcome(logId: string, outcome: TriggerOutcome):
 export function pickRandomVisionImage(images: VisionBoardImage[]): VisionBoardImage | null {
   if (images.length === 0) return null;
   return images[Math.floor(Math.random() * images.length)] ?? null;
+}
+
+// What the redirect screen shows when a failure pattern fires: a random image
+// or quote from the pattern's connected goals (so both rotate across runs),
+// always paired with the owning goal so its title + why can be displayed.
+export type GoalRedirectContent =
+  | { kind: 'image'; goal: Goal; image: VisionBoardImage }
+  | { kind: 'quote'; goal: Goal; quote: Quote }
+  // Connected goals exist but have no images/quotes — show the goal itself.
+  | { kind: 'goal'; goal: Goal };
+
+// Returns null only when the pattern has no connected goals, which onboarding
+// and the Plans tab prevent — reachable only for un-edited pre-V2 patterns.
+export function pickGoalRedirectContent(
+  failurePoint: FailurePoint,
+  goals: Goal[],
+  images: VisionBoardImage[],
+  quotes: Quote[]
+): GoalRedirectContent | null {
+  const linkedIds = failurePoint.goalIds ?? [];
+  const linked = goals.filter((goal) => linkedIds.includes(goal.id));
+  if (linked.length === 0) return null;
+
+  const pool: GoalRedirectContent[] = [];
+  for (const goal of linked) {
+    for (const imageId of goal.imageIds) {
+      const image = images.find((i) => i.id === imageId);
+      if (image) pool.push({ kind: 'image', goal, image });
+    }
+    for (const quoteId of goal.quoteIds) {
+      const quote = quotes.find((q) => q.id === quoteId);
+      if (quote) pool.push({ kind: 'quote', goal, quote });
+    }
+  }
+  if (pool.length === 0) {
+    return { kind: 'goal', goal: linked[Math.floor(Math.random() * linked.length)]! };
+  }
+  return pool[Math.floor(Math.random() * pool.length)]!;
 }
 
 export type PlanStats = {

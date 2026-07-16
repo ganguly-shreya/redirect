@@ -10,7 +10,7 @@ import type { StorageSchema } from '@/types/models';
 
 const KEY_PREFIX = 'redirect/';
 const VERSION_KEY = `${KEY_PREFIX}schemaVersion`;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // Keys whose values are arrays of { id } items, usable with the collection helpers.
 type CollectionKey = {
@@ -61,7 +61,20 @@ export async function removeFromCollection<K extends CollectionKey>(
 // Ordered map of migrations to run when the stored version is older than
 // SCHEMA_VERSION, e.g. { 2: migrateV1toV2 }. V2 shape changes land here instead
 // of as ad-hoc parsing guards scattered through the app.
-const MIGRATIONS: Record<number, () => Promise<void>> = {};
+const MIGRATIONS: Record<number, () => Promise<void>> = {
+  // V2 (goals-first model): failure points gain goalIds. A migration can't
+  // invent goals, so V1 patterns start unlinked; the Plans tab requires a goal
+  // link on next edit.
+  2: async () => {
+    const failurePoints = await getItem('failurePoints');
+    if (!failurePoints) return;
+    await setItem(
+      'failurePoints',
+      // Stored V1 items predate the goalIds field the type now requires.
+      failurePoints.map((fp) => ({ ...fp, goalIds: fp.goalIds ?? [] }))
+    );
+  },
+};
 
 // Called once at app start (hooks/use-onboarding-status.tsx load effect), before
 // any other storage read.

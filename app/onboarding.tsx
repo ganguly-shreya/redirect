@@ -58,7 +58,7 @@ export default function OnboardingScreen() {
   const addCustom = () => {
     const label = customLabel.trim();
     if (!label) return;
-    const failurePoint: FailurePoint = { id: createId(), label, isPreset: false };
+    const failurePoint: FailurePoint = { id: createId(), label, isPreset: false, goalIds: [] };
     const plan: IfThenPlan = {
       id: createId(),
       failurePointId: failurePoint.id,

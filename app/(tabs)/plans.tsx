@@ -64,7 +64,7 @@ export default function PlansScreen() {
     if (!label || !isPlanFormValueValid(draft.form)) return;
 
     if (draft.failurePointId === null) {
-      const failurePoint: FailurePoint = { id: createId(), label, isPreset: false };
+      const failurePoint: FailurePoint = { id: createId(), label, isPreset: false, goalIds: [] };
       const plan: IfThenPlan = {
         id: createId(),
         failurePointId: failurePoint.id,

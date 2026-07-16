@@ -14,6 +14,26 @@ export interface FailurePoint {
   id: string;
   label: string;
   isPreset: boolean;
+  // Many-to-many: one pattern can derail several goals. Every pattern should be
+  // linked to at least one goal (enforced by onboarding and the Plans tab);
+  // empty only for un-edited pre-V2 data.
+  goalIds: string[];
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  why: string; // one-liner: why this goal matters to the user
+  targetDate: string; // ISO 8601 date from the onboarding datepicker
+  imageIds: string[]; // -> visionBoardImages
+  quoteIds: string[]; // -> quotes
+  createdAt: string; // ISO 8601
+}
+
+export interface Quote {
+  id: string;
+  text: string;
+  isPreset: boolean;
 }
 
 export interface IfThenPlan {
@@ -55,6 +75,9 @@ export type StorageSchema = {
   plans: IfThenPlan[];
   triggerLogs: TriggerLog[];
   visionBoardImages: VisionBoardImage[];
+  goals: Goal[];
+  quotes: Quote[];
   checkInTimes: CheckInTime[];
+  recapTime: CheckInTime;
   hasOnboarded: boolean;
 };

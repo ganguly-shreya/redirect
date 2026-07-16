@@ -1,3 +1,4 @@
+import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -9,10 +10,24 @@ import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { getImageSource } from '@/lib/images';
-import { logTriggerFired, pickRandomVisionImage } from '@/lib/plan-engine';
+import {
+  logTriggerFired,
+  pickGoalRedirectContent,
+  pickRandomVisionImage,
+  type GoalRedirectContent,
+} from '@/lib/plan-engine';
 import { getCollection } from '@/lib/storage';
-import type { FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
+import type { FailurePoint, Goal, IfThenPlan, VisionBoardImage } from '@/types/models';
+
+function formatTargetDate(goal: Goal): string {
+  const days = differenceInCalendarDays(parseISO(goal.targetDate), new Date());
+  if (days > 1) return `${days} days to go`;
+  if (days === 1) return 'Tomorrow is the day';
+  if (days === 0) return 'Today is the day';
+  return `Target was ${format(parseISO(goal.targetDate), 'MMM d, yyyy')}`;
+}
 
 // Runs a plan's corrective action. This screen is the only TriggerLog write
 // point — anything that executes a plan must navigate here.
@@ -23,8 +38,10 @@ export default function ExecuteScreen() {
 
   const [plan, setPlan] = useState<IfThenPlan | null>(null);
   const [failurePoint, setFailurePoint] = useState<FailurePoint | null>(null);
+  const [goalContent, setGoalContent] = useState<GoalRedirectContent | null>(null);
   const [visionImage, setVisionImage] = useState<VisionBoardImage | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const tint = useThemeColor({}, 'tint');
   // Ref guard: React Compiler / dev StrictMode can double-run effects, which
   // would otherwise write two TriggerLogs per execution.
   const loggedRef = useRef(false);
@@ -43,15 +60,29 @@ export default function ExecuteScreen() {
 
       const failurePoints = await getCollection('failurePoints');
       if (cancelled) return;
-      setFailurePoint(failurePoints.find((fp) => fp.id === found.failurePointId) ?? null);
+      const foundFailurePoint = failurePoints.find((fp) => fp.id === found.failurePointId) ?? null;
+      setFailurePoint(foundFailurePoint);
 
       if (found.actionType === 'visionBoard') {
-        const images = await getCollection('visionBoardImages');
+        const [images, goals, quotes] = await Promise.all([
+          getCollection('visionBoardImages'),
+          getCollection('goals'),
+          getCollection('quotes'),
+        ]);
         if (cancelled) return;
-        const specific = found.actionConfig.imageId
-          ? images.find((i) => i.id === found.actionConfig.imageId)
-          : undefined;
-        setVisionImage(specific ?? pickRandomVisionImage(images));
+        // Goal-driven redirect: a random image or quote from the pattern's
+        // connected goals. Falls back to the V1 random-pool image only for
+        // pre-V2 patterns that have no linked goals.
+        const content = foundFailurePoint
+          ? pickGoalRedirectContent(foundFailurePoint, goals, images, quotes)
+          : null;
+        setGoalContent(content);
+        if (!content) {
+          const specific = found.actionConfig.imageId
+            ? images.find((i) => i.id === found.actionConfig.imageId)
+            : undefined;
+          setVisionImage(specific ?? pickRandomVisionImage(images));
+        }
       }
 
       if (!loggedRef.current) {
@@ -91,7 +122,84 @@ export default function ExecuteScreen() {
             <ThemedText type="caption">Stay with it until the timer ends.</ThemedText>
           </View>
         );
-      case 'visionBoard':
+      case 'visionBoard': {
+        // A block of white text reminding the user what they're working toward
+        // and why — shared by the image overlay and the quote/goal cards.
+        const goalReminder = (goal: Goal) => (
+          <View style={styles.goalReminder}>
+            <ThemedText
+              type="subtitle"
+              lightColor="#FFFFFF"
+              darkColor="#FFFFFF"
+              style={styles.centerText}>
+              {goal.title}
+            </ThemedText>
+            <ThemedText
+              lightColor="#FFFFFF"
+              darkColor="#FFFFFF"
+              style={styles.centerText}>
+              {goal.why}
+            </ThemedText>
+            <ThemedText type="caption" lightColor="#FFFFFFCC" darkColor="#FFFFFFCC">
+              {formatTargetDate(goal)}
+            </ThemedText>
+          </View>
+        );
+
+        if (goalContent?.kind === 'image') {
+          return (
+            <View style={styles.fill}>
+              <Image
+                source={getImageSource(goalContent.image)}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={200}
+              />
+              <View style={styles.scrim} />
+              <View style={styles.overlay}>{goalReminder(goalContent.goal)}</View>
+            </View>
+          );
+        }
+        if (goalContent?.kind === 'quote') {
+          return (
+            <View style={[styles.fill, styles.goalCard, { backgroundColor: tint }]}>
+              <ThemedText
+                lightColor="#FFFFFF"
+                darkColor="#FFFFFF"
+                style={[styles.centerText, styles.quoteText]}>
+                “{goalContent.quote.text}”
+              </ThemedText>
+              {goalReminder(goalContent.goal)}
+            </View>
+          );
+        }
+        if (goalContent?.kind === 'goal') {
+          return (
+            <View style={[styles.fill, styles.goalCard, { backgroundColor: tint }]}>
+              <ThemedText type="caption" lightColor="#FFFFFFCC" darkColor="#FFFFFFCC">
+                Remember what this is for
+              </ThemedText>
+              <ThemedText
+                type="title"
+                lightColor="#FFFFFF"
+                darkColor="#FFFFFF"
+                style={styles.centerText}>
+                {goalContent.goal.title}
+              </ThemedText>
+              <ThemedText
+                type="subtitle"
+                lightColor="#FFFFFF"
+                darkColor="#FFFFFF"
+                style={styles.centerText}>
+                {goalContent.goal.why}
+              </ThemedText>
+              <ThemedText type="caption" lightColor="#FFFFFFCC" darkColor="#FFFFFFCC">
+                {formatTargetDate(goalContent.goal)}
+              </ThemedText>
+            </View>
+          );
+        }
+        // Pre-V2 fallback: pattern has no linked goals — V1 random-pool image.
         return (
           <View style={styles.fill}>
             {visionImage ? (
@@ -103,7 +211,7 @@ export default function ExecuteScreen() {
               />
             ) : (
               <ThemedText type="subtitle" style={styles.centerText}>
-                Your vision board is empty — add images in the Vision Board tab.
+                Your vision board is empty — add images to your goals in the Goals tab.
               </ThemedText>
             )}
             <View style={styles.scrim} />
@@ -118,6 +226,7 @@ export default function ExecuteScreen() {
             </View>
           </View>
         );
+      }
       case 'customMessage':
         return (
           <View style={styles.actionBody}>
@@ -174,6 +283,20 @@ const styles = StyleSheet.create({
   },
   overlay: {
     padding: Spacing.screen,
+  },
+  goalReminder: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  goalCard: {
+    gap: Spacing.lg,
+    padding: Spacing.screen,
+    alignSelf: 'stretch',
+  },
+  quoteText: {
+    fontSize: 28,
+    lineHeight: 38,
+    fontWeight: '600',
   },
   centerText: {
     textAlign: 'center',
