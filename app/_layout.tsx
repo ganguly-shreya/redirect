@@ -4,11 +4,12 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { OnboardingProvider, useOnboardingStatus } from '@/hooks/use-onboarding-status';
-import { STUCK_URL } from '@/lib/notifications';
+import { RETRO_URL, STUCK_URL, refreshScheduledNotifications } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -53,8 +54,22 @@ function RootNavigator() {
     const data = response.notification.request.content.data as { url?: string };
     if (data.url === STUCK_URL) {
       router.push({ pathname: '/stuck', params: { source: 'scheduled' } });
+    } else if (data.url === RETRO_URL) {
+      router.push('/retro');
     }
   }, [response, isLoading, isOnboarded, router]);
+
+  // The daily-recap notification is a one-shot with today's count baked in;
+  // refreshing on launch and on every foreground rolls it to the next recap
+  // time with the current number.
+  useEffect(() => {
+    if (isLoading || !isOnboarded) return;
+    refreshScheduledNotifications();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshScheduledNotifications();
+    });
+    return () => subscription.remove();
+  }, [isLoading, isOnboarded]);
 
   // Splash stays visible until the hasOnboarded flag loads, so users never
   // flash the wrong side of the gate.

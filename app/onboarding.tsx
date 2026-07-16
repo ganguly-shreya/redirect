@@ -21,7 +21,7 @@ import { useOnboardingStatus } from '@/hooks/use-onboarding-status';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { createId } from '@/lib/id';
 import { BUNDLED_VISION_IMAGES, persistPickedImage } from '@/lib/images';
-import { requestNotificationPermissions, rescheduleCheckIns } from '@/lib/notifications';
+import { requestNotificationPermissions, rescheduleAllNotifications } from '@/lib/notifications';
 import {
   PRESET_QUOTES,
   instantiatePreset,
@@ -198,7 +198,11 @@ export default function OnboardingScreen() {
     // display permission, and starts working if the user later grants it in
     // system settings.
     await requestNotificationPermissions();
-    await rescheduleCheckIns(times);
+    await rescheduleAllNotifications({
+      checkInTimes: times,
+      recapTime,
+      todayRedirectCount: 0,
+    });
     await completeOnboarding();
   };
 

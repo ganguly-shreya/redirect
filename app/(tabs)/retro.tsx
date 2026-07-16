@@ -1,4 +1,4 @@
-import { format, parseISO, startOfWeek } from 'date-fns';
+import { format, isToday, parseISO, startOfWeek } from 'date-fns';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -41,6 +41,17 @@ export default function RetroScreen() {
 
   const stats = computePlanStats(logs, plans, failurePoints);
 
+  // End-of-day recap, phrased about the user: every redirect is a win at
+  // catching their own brain. The recap notification deep-links here.
+  const todayLogs = logs.filter((log) => isToday(parseISO(log.firedAt)));
+  const todayHelped = todayLogs.filter((log) => log.outcome === 'helped').length;
+  const todaySummary =
+    todayLogs.length === 0
+      ? null
+      : `You caught yourself and redirected your brain ${
+          todayLogs.length === 1 ? 'once' : `${todayLogs.length} times`
+        } today${todayHelped > 0 ? ` — ${todayHelped} helped` : ''}. Every catch is a win. 🎉`;
+
   // Newest first, grouped by ISO week (Monday start).
   const sorted = [...logs].sort((a, b) => b.firedAt.localeCompare(a.firedAt));
   const weeks: { title: string; items: TriggerLog[] }[] = [];
@@ -58,6 +69,12 @@ export default function RetroScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {todaySummary && (
+          <View style={[styles.statsCard, { backgroundColor: card, borderColor: border }]}>
+            <ThemedText type="defaultSemiBold">Today</ThemedText>
+            <ThemedText>{todaySummary}</ThemedText>
+          </View>
+        )}
         {stats.length > 0 && (
           <View style={[styles.statsCard, { backgroundColor: card, borderColor: border }]}>
             <ThemedText type="defaultSemiBold">What&apos;s working</ThemedText>
