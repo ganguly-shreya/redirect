@@ -280,7 +280,10 @@ export default function GoalsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {goals.map((goal) => {
           if (draft && draft.id === goal.id) {
             return <View key={goal.id}>{renderDraftCard()}</View>;

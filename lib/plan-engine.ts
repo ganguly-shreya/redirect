@@ -23,8 +23,8 @@ export async function logTriggerFired(planId: string, source: TriggerSource): Pr
     outcome: null,
   };
   await upsertInCollection('triggerLogs', log);
-  // The daily recap notification carries today's redirect count in its body,
-  // so every new log refreshes the schedule with the updated number.
+  // The daily recap notification carries today's win count in its body, so
+  // every log write refreshes the schedule.
   await refreshScheduledNotifications();
   return log;
 }
@@ -34,6 +34,8 @@ export async function setTriggerOutcome(logId: string, outcome: TriggerOutcome):
   const log = logs.find((l) => l.id === logId);
   if (!log) return;
   await upsertInCollection('triggerLogs', { ...log, outcome });
+  // Wins = redirects tagged "helped", so tagging changes the recap body too.
+  await refreshScheduledNotifications();
 }
 
 export function pickRandomVisionImage(images: VisionBoardImage[]): VisionBoardImage | null {

@@ -12,7 +12,10 @@ export const PRESETS: readonly PresetDefinition[] = [
     suggestedPlan: {
       triggerDescription: 'If I catch myself scrolling my phone mid-deep-work…',
       actionType: 'timer',
-      actionConfig: { durationMinutes: 10 },
+      actionConfig: {
+        durationMinutes: 10,
+        message: 'Phone face-down until the timer ends — the feed can wait.',
+      },
     },
   },
   {
@@ -44,7 +47,10 @@ export const PRESETS: readonly PresetDefinition[] = [
     suggestedPlan: {
       triggerDescription: 'If I keep putting off starting…',
       actionType: 'timer',
-      actionConfig: { durationMinutes: 5 },
+      actionConfig: {
+        durationMinutes: 5,
+        message: 'Start with the smallest task when the timer finishes.',
+      },
     },
   },
 ];

@@ -39,13 +39,14 @@ export async function cancelAllNotifications(): Promise<void> {
 type RescheduleInput = {
   checkInTimes: CheckInTime[];
   recapTime: CheckInTime;
-  todayRedirectCount: number;
+  // A win = a redirect tagged "helped" today. Untagged redirects aren't counted.
+  todayWinCount: number;
 };
 
-function recapBody(count: number): string {
-  if (count === 0) return 'Take a minute to see how today went.';
-  if (count === 1) return 'You caught yourself and redirected once today — that’s a win. 🎉';
-  return `You caught yourself and redirected ${count} times today — ${count} wins. 🎉`;
+function recapBody(wins: number): string {
+  if (wins === 0) return 'Take a minute to see how today went.';
+  if (wins === 1) return 'You won once at redirecting your brain today. 🎉';
+  return `You won ${wins} times at redirecting your brain today. 🎉`;
 }
 
 // Cancel-all + reschedule everything: this app owns every scheduled
@@ -58,7 +59,7 @@ function recapBody(count: number): string {
 export async function rescheduleAllNotifications({
   checkInTimes,
   recapTime,
-  todayRedirectCount,
+  todayWinCount,
 }: RescheduleInput): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
   for (const time of checkInTimes) {
@@ -86,7 +87,7 @@ export async function rescheduleAllNotifications({
     identifier: RECAP_IDENTIFIER,
     content: {
       title: 'Your daily recap',
-      body: recapBody(firesToday ? todayRedirectCount : 0),
+      body: recapBody(firesToday ? todayWinCount : 0),
       data: { url: RETRO_URL },
     },
     trigger: {
@@ -97,11 +98,12 @@ export async function rescheduleAllNotifications({
   });
 }
 
-// Recomputes today's redirect count from storage and reschedules everything.
-// Called after every TriggerLog write and on app foreground, so the one-shot
-// recap rolls forward each day the app is used. No-op for pre-V2 installs that
-// never chose a recap time. Accepted limitation: on a day the app is never
-// opened, no recap fires — there are no wins to report, and check-ins still nudge.
+// Recomputes today's win count (redirects tagged "helped") from storage and
+// reschedules everything. Called after every TriggerLog write or outcome tag
+// and on app foreground, so the one-shot recap rolls forward each day the app
+// is used. No-op for pre-V2 installs that never chose a recap time. Accepted
+// limitation: on a day the app is never opened, no recap fires — there are no
+// wins to report, and check-ins still nudge.
 export async function refreshScheduledNotifications(): Promise<void> {
   const [checkInTimes, recapTime, logs] = await Promise.all([
     getItem('checkInTimes'),
@@ -109,6 +111,8 @@ export async function refreshScheduledNotifications(): Promise<void> {
     getCollection('triggerLogs'),
   ]);
   if (!checkInTimes || !recapTime) return;
-  const todayRedirectCount = logs.filter((log) => isToday(parseISO(log.firedAt))).length;
-  await rescheduleAllNotifications({ checkInTimes, recapTime, todayRedirectCount });
+  const todayWinCount = logs.filter(
+    (log) => log.outcome === 'helped' && isToday(parseISO(log.firedAt))
+  ).length;
+  await rescheduleAllNotifications({ checkInTimes, recapTime, todayWinCount });
 }

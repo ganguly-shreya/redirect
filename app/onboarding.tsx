@@ -201,7 +201,7 @@ export default function OnboardingScreen() {
     await rescheduleAllNotifications({
       checkInTimes: times,
       recapTime,
-      todayRedirectCount: 0,
+      todayWinCount: 0,
     });
     await completeOnboarding();
   };
@@ -383,7 +383,8 @@ export default function OnboardingScreen() {
         <ScrollView
           style={styles.flex}
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           {renderStep()}
         </ScrollView>
         <View style={styles.footer}>

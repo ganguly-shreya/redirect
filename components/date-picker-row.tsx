@@ -3,7 +3,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { format, parseISO, startOfDay } from 'date-fns';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -32,7 +32,12 @@ export function DatePickerRow({ label, date, onChange }: DatePickerRowProps) {
   };
 
   return (
-    <View style={[styles.row, { backgroundColor: card, borderColor: border }]}>
+    // Dismiss the keyboard the moment the row is touched: the picker doesn't
+    // take focus away from a text input, so an open keyboard would otherwise
+    // stay up and eat the scroll space.
+    <View
+      onTouchStart={() => Keyboard.dismiss()}
+      style={[styles.row, { backgroundColor: card, borderColor: border }]}>
       <ThemedText style={styles.label}>{label}</ThemedText>
       {Platform.OS === 'ios' ? (
         <DateTimePicker

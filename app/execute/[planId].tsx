@@ -184,7 +184,9 @@ export default function ExecuteScreen() {
               durationMinutes={plan.actionConfig.durationMinutes ?? 5}
               onComplete={() => setTimerDone(true)}
             />
-            <ThemedText type="caption">Stay with it until the timer ends.</ThemedText>
+            <ThemedText type="caption" style={styles.centerText}>
+              {plan.actionConfig.message ?? 'Stay with it until the timer ends.'}
+            </ThemedText>
           </View>
         );
       }

@@ -41,16 +41,19 @@ export default function RetroScreen() {
 
   const stats = computePlanStats(logs, plans, failurePoints);
 
-  // End-of-day recap, phrased about the user: every redirect is a win at
-  // catching their own brain. The recap notification deep-links here.
+  // End-of-day recap, phrased about the user. A win = a redirect that actually
+  // helped; untagged runs are prompted for, not celebrated. The recap
+  // notification deep-links here.
   const todayLogs = logs.filter((log) => isToday(parseISO(log.firedAt)));
-  const todayHelped = todayLogs.filter((log) => log.outcome === 'helped').length;
+  const todayWins = todayLogs.filter((log) => log.outcome === 'helped').length;
   const todaySummary =
     todayLogs.length === 0
       ? null
-      : `You caught yourself and redirected your brain ${
-          todayLogs.length === 1 ? 'once' : `${todayLogs.length} times`
-        } today${todayHelped > 0 ? ` — ${todayHelped} helped` : ''}. Every catch is a win. 🎉`;
+      : todayWins > 0
+        ? `You won ${todayWins === 1 ? 'once' : `${todayWins} times`} at redirecting your brain today. 🎉`
+        : `You caught yourself ${
+            todayLogs.length === 1 ? 'once' : `${todayLogs.length} times`
+          } today. Tag the redirects that helped to count your wins.`;
 
   // Newest first, grouped by ISO week (Monday start).
   const sorted = [...logs].sort((a, b) => b.firedAt.localeCompare(a.firedAt));

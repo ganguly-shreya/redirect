@@ -4,7 +4,7 @@ import DateTimePicker, {
 import { format, set } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -43,7 +43,11 @@ export function TimePickerRow({
   };
 
   return (
-    <View style={[styles.row, { backgroundColor: card, borderColor: border }]}>
+    // Same keyboard-dismiss-on-touch as date-picker-row: the picker never takes
+    // input focus, so a lingering keyboard would keep hiding the screen.
+    <View
+      onTouchStart={() => Keyboard.dismiss()}
+      style={[styles.row, { backgroundColor: card, borderColor: border }]}>
       <ThemedText style={styles.label}>{label}</ThemedText>
       {Platform.OS === 'ios' ? (
         <DateTimePicker mode="time" value={toDate(time)} onChange={handleChange} />

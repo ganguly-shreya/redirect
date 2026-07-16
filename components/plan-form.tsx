@@ -56,24 +56,32 @@ export function PlanForm({ value, onChange }: PlanFormProps) {
     switch (value.actionType) {
       case 'timer':
         return (
-          <View style={styles.field}>
-            <ThemedText type="caption">Timer length (minutes)</ThemedText>
-            <ThemedTextInput
-              keyboardType="number-pad"
-              value={value.actionConfig.durationMinutes?.toString() ?? ''}
-              onChangeText={(text) => {
-                const parsed = parseInt(text, 10);
-                setConfig({ durationMinutes: Number.isNaN(parsed) ? undefined : parsed });
-              }}
-              placeholder="e.g. 10"
-            />
-          </View>
+          <>
+            <View style={styles.field}>
+              <ThemedText type="caption">Timer length (minutes)</ThemedText>
+              <ThemedTextInput
+                keyboardType="number-pad"
+                value={value.actionConfig.durationMinutes?.toString() ?? ''}
+                onChangeText={(text) => {
+                  const parsed = parseInt(text, 10);
+                  setConfig({ durationMinutes: Number.isNaN(parsed) ? undefined : parsed });
+                }}
+                placeholder="e.g. 10"
+              />
+            </View>
+            <View style={styles.field}>
+              <ThemedText type="caption">Message shown with the timer (optional)</ThemedText>
+              <ThemedTextInput
+                value={value.actionConfig.message ?? ''}
+                onChangeText={(text) => setConfig({ message: text })}
+                placeholder="e.g. Start with the smallest task when the timer finishes."
+              />
+            </View>
+          </>
         );
       case 'visionBoard':
         return (
-          <ThemedText type="caption">
-            A random image from your vision board will be shown full-screen.
-          </ThemedText>
+          <ThemedText type="caption">Remind me of my vision for the future.</ThemedText>
         );
       case 'customMessage':
         return (
