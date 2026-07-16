@@ -15,6 +15,7 @@ type TimePickerRowProps = {
   time: CheckInTime;
   onChange: (time: CheckInTime) => void;
   onRemove?: () => void;
+  label?: string;
 };
 
 function toDate(time: CheckInTime): Date {
@@ -23,7 +24,12 @@ function toDate(time: CheckInTime): Date {
 
 // iOS renders the compact inline picker; Android's picker is a dialog, so there
 // it's a Pressable showing the time that opens the dialog on demand.
-export function TimePickerRow({ time, onChange, onRemove }: TimePickerRowProps) {
+export function TimePickerRow({
+  time,
+  onChange,
+  onRemove,
+  label = 'Daily check-in',
+}: TimePickerRowProps) {
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const icon = useThemeColor({}, 'icon');
@@ -38,7 +44,7 @@ export function TimePickerRow({ time, onChange, onRemove }: TimePickerRowProps) 
 
   return (
     <View style={[styles.row, { backgroundColor: card, borderColor: border }]}>
-      <ThemedText style={styles.label}>Daily check-in</ThemedText>
+      <ThemedText style={styles.label}>{label}</ThemedText>
       {Platform.OS === 'ios' ? (
         <DateTimePicker mode="time" value={toDate(time)} onChange={handleChange} />
       ) : (

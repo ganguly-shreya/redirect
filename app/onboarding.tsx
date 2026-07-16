@@ -1,63 +1,85 @@
 import { Ionicons } from '@expo/vector-icons';
+import { format, parseISO } from 'date-fns';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  GoalEditor,
+  createEmptyGoalDraft,
+  isGoalDraftValid,
+  type GoalDraft,
+} from '@/components/goal-editor';
 import { PlanForm, isPlanFormValueValid } from '@/components/plan-form';
-import { TimePickerRow } from '@/components/time-picker-row';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { VisionImageGrid } from '@/components/vision-image-grid';
+import { TimePickerRow } from '@/components/time-picker-row';
 import { Radius, Spacing } from '@/constants/theme';
 import { useOnboardingStatus } from '@/hooks/use-onboarding-status';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { createId } from '@/lib/id';
 import { BUNDLED_VISION_IMAGES, persistPickedImage } from '@/lib/images';
 import { requestNotificationPermissions, rescheduleCheckIns } from '@/lib/notifications';
-import { PRESETS, instantiatePreset, type PresetDefinition } from '@/lib/presets';
+import {
+  PRESET_QUOTES,
+  instantiatePreset,
+  instantiateQuote,
+  type PresetDefinition,
+} from '@/lib/presets';
 import { setItem } from '@/lib/storage';
-import type { CheckInTime, FailurePoint, IfThenPlan, VisionBoardImage } from '@/types/models';
+import type {
+  CheckInTime,
+  FailurePoint,
+  Goal,
+  IfThenPlan,
+  Quote,
+  VisionBoardImage,
+} from '@/types/models';
 
-type Selection = { failurePoint: FailurePoint; plan: IfThenPlan };
+type PatternSelection = { failurePoint: FailurePoint; plan: IfThenPlan };
 
 const STEP_TITLES = [
-  'Where do you get stuck?',
-  'Make a plan for each',
-  'Build your vision board',
+  'What are you working toward?',
+  'Make a plan for each pattern',
   'Daily check-ins',
+  'Your daily recap',
 ] as const;
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const tint = useThemeColor({}, 'tint');
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const icon = useThemeColor({}, 'icon');
+  const danger = useThemeColor({}, 'danger');
   const { completeOnboarding } = useOnboardingStatus();
 
   const [step, setStep] = useState(0);
-  const [selections, setSelections] = useState<Selection[]>([]);
-  const [customLabel, setCustomLabel] = useState('');
-  // Bundled defaults start selected; the user can remove any of them or add their own.
-  const [images, setImages] = useState<VisionBoardImage[]>([...BUNDLED_VISION_IMAGES]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  // null = no editor open; id null inside = adding a new goal.
+  const [goalDraft, setGoalDraft] = useState<{ id: string | null; draft: GoalDraft } | null>(null);
+  // Every instantiated pattern (with its plan); a pattern only survives finish()
+  // if at least one goal links it.
+  const [patterns, setPatterns] = useState<PatternSelection[]>([]);
+  // Shared pools goals select from. Bundled defaults and preset quotes start in
+  // the pool; user picks/additions grow it.
+  const [imagePool, setImagePool] = useState<VisionBoardImage[]>([...BUNDLED_VISION_IMAGES]);
+  const [quotePool, setQuotePool] = useState<Quote[]>(() =>
+    PRESET_QUOTES.map((text) => instantiateQuote(text, true))
+  );
   const [times, setTimes] = useState<CheckInTime[]>([{ hour: 14, minute: 0 }]);
+  const [recapTime, setRecapTime] = useState<CheckInTime>({ hour: 21, minute: 0 });
 
-  const togglePreset = (preset: PresetDefinition) => {
-    setSelections((prev) => {
-      const index = prev.findIndex(
-        (s) => s.failurePoint.isPreset && s.failurePoint.label === preset.failurePoint.label
-      );
-      if (index >= 0) return prev.filter((_, i) => i !== index);
-      return [...prev, instantiatePreset(preset)];
-    });
+  const linkedPatterns = patterns.filter((s) => s.failurePoint.goalIds.length > 0);
+
+  const instantiatePresetPattern = (preset: PresetDefinition): string => {
+    const selection = instantiatePreset(preset);
+    setPatterns((prev) => [...prev, selection]);
+    return selection.failurePoint.id;
   };
 
-  const addCustom = () => {
-    const label = customLabel.trim();
-    if (!label) return;
+  const addCustomPattern = (label: string): string => {
     const failurePoint: FailurePoint = { id: createId(), label, isPreset: false, goalIds: [] };
     const plan: IfThenPlan = {
       id: createId(),
@@ -67,33 +89,111 @@ export default function OnboardingScreen() {
       actionConfig: {},
       createdAt: new Date().toISOString(),
     };
-    setSelections((prev) => [...prev, { failurePoint, plan }]);
-    setCustomLabel('');
+    setPatterns((prev) => [...prev, { failurePoint, plan }]);
+    return failurePoint.id;
   };
 
-  const removeSelection = (failurePointId: string) =>
-    setSelections((prev) => prev.filter((s) => s.failurePoint.id !== failurePointId));
-
-  const updatePlan = (failurePointId: string, plan: IfThenPlan) =>
-    setSelections((prev) =>
-      prev.map((s) => (s.failurePoint.id === failurePointId ? { ...s, plan } : s))
-    );
-
-  const pickImages = async () => {
+  const pickImages = async (): Promise<VisionBoardImage[]> => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.7,
     });
-    if (result.canceled) return;
-    setImages((prev) => [...prev, ...result.assets.map(persistPickedImage)]);
+    if (result.canceled) return [];
+    const persisted = result.assets.map(persistPickedImage);
+    setImagePool((prev) => [...prev, ...persisted]);
+    return persisted;
   };
 
+  const addQuote = (text: string): Quote => {
+    const quote = instantiateQuote(text, false);
+    setQuotePool((prev) => [...prev, quote]);
+    return quote;
+  };
+
+  const startEditGoal = (goal: Goal) =>
+    setGoalDraft({
+      id: goal.id,
+      draft: {
+        title: goal.title,
+        why: goal.why,
+        targetDate: goal.targetDate,
+        imageIds: [...goal.imageIds],
+        quoteIds: [...goal.quoteIds],
+        failurePointIds: patterns
+          .filter((s) => s.failurePoint.goalIds.includes(goal.id))
+          .map((s) => s.failurePoint.id),
+      },
+    });
+
+  const saveGoalDraft = () => {
+    if (!goalDraft || !isGoalDraftValid(goalDraft.draft)) return;
+    const { draft } = goalDraft;
+    const id = goalDraft.id ?? createId();
+    const existing = goals.find((g) => g.id === goalDraft.id);
+    const goal: Goal = {
+      id,
+      title: draft.title.trim(),
+      why: draft.why.trim(),
+      targetDate: draft.targetDate,
+      imageIds: draft.imageIds,
+      quoteIds: draft.quoteIds,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
+    setGoals((prev) =>
+      existing ? prev.map((g) => (g.id === id ? goal : g)) : [...prev, goal]
+    );
+    // Sync the many-to-many side: each pattern's goalIds gains/loses this goal.
+    setPatterns((prev) =>
+      prev.map((s) => {
+        const linked = draft.failurePointIds.includes(s.failurePoint.id);
+        const has = s.failurePoint.goalIds.includes(id);
+        if (linked === has) return s;
+        return {
+          ...s,
+          failurePoint: {
+            ...s.failurePoint,
+            goalIds: linked
+              ? [...s.failurePoint.goalIds, id]
+              : s.failurePoint.goalIds.filter((g) => g !== id),
+          },
+        };
+      })
+    );
+    setGoalDraft(null);
+  };
+
+  const removeGoal = (goal: Goal) => {
+    setGoals((prev) => prev.filter((g) => g.id !== goal.id));
+    setPatterns((prev) =>
+      prev.map((s) =>
+        s.failurePoint.goalIds.includes(goal.id)
+          ? {
+              ...s,
+              failurePoint: {
+                ...s.failurePoint,
+                goalIds: s.failurePoint.goalIds.filter((g) => g !== goal.id),
+              },
+            }
+          : s
+      )
+    );
+  };
+
+  const updatePlan = (failurePointId: string, plan: IfThenPlan) =>
+    setPatterns((prev) =>
+      prev.map((s) => (s.failurePoint.id === failurePointId ? { ...s, plan } : s))
+    );
+
   const finish = async () => {
-    await setItem('failurePoints', selections.map((s) => s.failurePoint));
-    await setItem('plans', selections.map((s) => s.plan));
-    await setItem('visionBoardImages', images);
+    // Patterns no goal links (created then unlinked mid-flow) are dropped.
+    await setItem('goals', goals);
+    await setItem('quotes', quotePool);
+    await setItem('failurePoints', linkedPatterns.map((s) => s.failurePoint));
+    await setItem('plans', linkedPatterns.map((s) => s.plan));
+    await setItem('visionBoardImages', imagePool);
     await setItem('checkInTimes', times);
+    await setItem('recapTime', recapTime);
     // Schedule even if permission is denied: the schedule is harmless without
     // display permission, and starts working if the user later grants it in
     // system settings.
@@ -104,12 +204,43 @@ export default function OnboardingScreen() {
 
   const canContinue =
     step === 0
-      ? selections.length > 0
+      ? goals.length > 0 && goalDraft === null && linkedPatterns.length > 0
       : step === 1
-        ? selections.every((s) => isPlanFormValueValid(s.plan))
-        : step === 2
-          ? images.length >= 3
-          : true;
+        ? linkedPatterns.every((s) => isPlanFormValueValid(s.plan))
+        : true;
+
+  const renderGoalDraftCard = () => {
+    if (!goalDraft) return null;
+    return (
+      <View style={[styles.goalCard, { backgroundColor: card, borderColor: border }]}>
+        <GoalEditor
+          value={goalDraft.draft}
+          onChange={(draft) => setGoalDraft({ ...goalDraft, draft })}
+          images={imagePool}
+          onPickImages={pickImages}
+          quotes={quotePool}
+          onAddQuote={addQuote}
+          failurePoints={patterns.map((s) => s.failurePoint)}
+          onInstantiatePreset={instantiatePresetPattern}
+          onAddCustomPattern={addCustomPattern}
+        />
+        <View style={styles.draftButtons}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setGoalDraft(null)}
+            style={styles.cancel}>
+            <ThemedText type="link">Cancel</ThemedText>
+          </Pressable>
+          <PrimaryButton
+            label="Save goal"
+            onPress={saveGoalDraft}
+            disabled={!isGoalDraftValid(goalDraft.draft)}
+            style={styles.save}
+          />
+        </View>
+      </View>
+    );
+  };
 
   const renderStep = () => {
     switch (step) {
@@ -117,65 +248,68 @@ export default function OnboardingScreen() {
         return (
           <View style={styles.stepBody}>
             <ThemedText type="caption">
-              Pick the patterns that derail you, or add your own.
+              Start with the goals that matter. Each one gets a why, a vision board, and the
+              failure patterns that usually derail it.
             </ThemedText>
-            {PRESETS.map((preset) => {
-              const selected = selections.some(
-                (s) => s.failurePoint.isPreset && s.failurePoint.label === preset.failurePoint.label
-              );
+            {goals.map((goal) => {
+              if (goalDraft && goalDraft.id === goal.id) {
+                return <View key={goal.id}>{renderGoalDraftCard()}</View>;
+              }
+              const patternLabels = patterns
+                .filter((s) => s.failurePoint.goalIds.includes(goal.id))
+                .map((s) => s.failurePoint.label);
               return (
-                <Pressable
-                  key={preset.failurePoint.label}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  onPress={() => togglePreset(preset)}
-                  style={[
-                    styles.row,
-                    { backgroundColor: card, borderColor: selected ? tint : border },
-                  ]}>
-                  <Ionicons
-                    name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={22}
-                    color={selected ? tint : icon}
-                  />
-                  <ThemedText style={styles.rowLabel}>{preset.failurePoint.label}</ThemedText>
-                </Pressable>
+                <View
+                  key={goal.id}
+                  style={[styles.goalCard, { backgroundColor: card, borderColor: border }]}>
+                  <View style={styles.goalHeader}>
+                    <ThemedText type="defaultSemiBold" style={styles.goalTitle}>
+                      {goal.title}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit goal"
+                      hitSlop={8}
+                      onPress={() => startEditGoal(goal)}>
+                      <Ionicons name="pencil-outline" size={18} color={icon} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete goal"
+                      hitSlop={8}
+                      onPress={() => removeGoal(goal)}>
+                      <Ionicons name="trash-outline" size={18} color={danger} />
+                    </Pressable>
+                  </View>
+                  <ThemedText type="caption">{goal.why}</ThemedText>
+                  <ThemedText type="caption">
+                    By {format(parseISO(goal.targetDate), 'MMM d, yyyy')} ·{' '}
+                    {goal.imageIds.length} images · {goal.quoteIds.length} quotes
+                  </ThemedText>
+                  <ThemedText type="caption">
+                    {patternLabels.length > 0
+                      ? `Failure modes: ${patternLabels.join(', ')}`
+                      : 'No failure modes linked yet — edit to add some.'}
+                  </ThemedText>
+                </View>
               );
             })}
-            {selections
-              .filter((s) => !s.failurePoint.isPreset)
-              .map((s) => (
-                <Pressable
-                  key={s.failurePoint.id}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: true }}
-                  onPress={() => removeSelection(s.failurePoint.id)}
-                  style={[styles.row, { backgroundColor: card, borderColor: tint }]}>
-                  <Ionicons name="checkmark-circle" size={22} color={tint} />
-                  <ThemedText style={styles.rowLabel}>{s.failurePoint.label}</ThemedText>
-                  <Ionicons name="close" size={18} color={icon} />
-                </Pressable>
-              ))}
-            <View style={styles.customRow}>
-              <ThemedTextInput
-                value={customLabel}
-                onChangeText={setCustomLabel}
-                placeholder="Add your own pattern…"
-                style={styles.customInput}
-                onSubmitEditing={addCustom}
-                returnKeyType="done"
+            {goalDraft && goalDraft.id === null && renderGoalDraftCard()}
+            {!goalDraft && (
+              <PrimaryButton
+                label={goals.length === 0 ? 'Add your first goal' : 'Add another goal'}
+                onPress={() => setGoalDraft({ id: null, draft: createEmptyGoalDraft() })}
               />
-              <PrimaryButton label="Add" onPress={addCustom} disabled={!customLabel.trim()} />
-            </View>
+            )}
           </View>
         );
       case 1:
         return (
           <View style={styles.stepBody}>
             <ThemedText type="caption">
-              Each pattern gets an if-then plan. Accept the suggestion or tweak it.
+              Each failure pattern gets an if-then plan. Accept the suggestion or tweak it.
             </ThemedText>
-            {selections.map((s) => (
+            {linkedPatterns.map((s) => (
               <View
                 key={s.failurePoint.id}
                 style={[styles.planCard, { backgroundColor: card, borderColor: border }]}>
@@ -189,20 +323,6 @@ export default function OnboardingScreen() {
           </View>
         );
       case 2:
-        return (
-          <View style={styles.stepBody}>
-            <ThemedText type="caption">
-              When a plan redirects you here, one of these images is shown full-screen. We added
-              some to start — remove any, or add your own. Keep at least 3.
-            </ThemedText>
-            <VisionImageGrid
-              images={images}
-              onRemove={(image) => setImages((prev) => prev.filter((i) => i.id !== image.id))}
-            />
-            <PrimaryButton label="Add your own" onPress={pickImages} />
-          </View>
-        );
-      case 3:
         return (
           <View style={styles.stepBody}>
             <ThemedText type="caption">
@@ -229,6 +349,16 @@ export default function OnboardingScreen() {
                 onPress={() => setTimes((prev) => [...prev, { hour: 9, minute: 0 }])}
               />
             )}
+          </View>
+        );
+      case 3:
+        return (
+          <View style={styles.stepBody}>
+            <ThemedText type="caption">
+              Once a day, Redirect recaps how many times you won at redirecting your brain. When
+              should it arrive?
+            </ThemedText>
+            <TimePickerRow label="Daily recap" time={recapTime} onChange={setRecapTime} />
           </View>
         );
       default:
@@ -293,23 +423,18 @@ const styles = StyleSheet.create({
   stepBody: {
     gap: Spacing.sm + Spacing.xs,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm + Spacing.xs,
+  goalCard: {
     borderRadius: Radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.md,
-  },
-  rowLabel: {
-    flex: 1,
-  },
-  customRow: {
-    flexDirection: 'row',
     gap: Spacing.sm,
-    alignItems: 'center',
   },
-  customInput: {
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  goalTitle: {
     flex: 1,
   },
   planCard: {
@@ -317,6 +442,19 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.md,
     gap: Spacing.md,
+  },
+  draftButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  cancel: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+  },
+  save: {
+    flex: 1,
   },
   footer: {
     flexDirection: 'row',
