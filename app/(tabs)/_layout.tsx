@@ -33,11 +33,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="vision-board"
+        name="goals"
         options={{
-          title: 'Vision Board',
+          title: 'Goals',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="images-outline" size={size} color={color} />
+            <Ionicons name="flag-outline" size={size} color={color} />
           ),
         }}
       />

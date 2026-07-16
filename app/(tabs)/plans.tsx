@@ -12,7 +12,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { createId } from '@/lib/id';
 import { getCollection, removeFromCollection, upsertInCollection } from '@/lib/storage';
-import type { FailurePoint, IfThenPlan } from '@/types/models';
+import type { FailurePoint, Goal, IfThenPlan } from '@/types/models';
 
 const EMPTY_FORM: PlanFormValue = {
   triggerDescription: '',
@@ -25,22 +25,26 @@ const EMPTY_FORM: PlanFormValue = {
 type Draft = {
   failurePointId: string | null; // null = adding new
   label: string;
+  goalIds: string[]; // every pattern must serve at least one goal
   form: PlanFormValue;
 };
 
 export default function PlansScreen() {
   const [failurePoints, setFailurePoints] = useState<FailurePoint[]>([]);
   const [plans, setPlans] = useState<IfThenPlan[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const icon = useThemeColor({}, 'icon');
   const danger = useThemeColor({}, 'danger');
+  const tint = useThemeColor({}, 'tint');
 
   const reload = useCallback(() => {
     getCollection('failurePoints').then(setFailurePoints);
     getCollection('plans').then(setPlans);
+    getCollection('goals').then(setGoals);
   }, []);
 
   useFocusEffect(reload);
@@ -49,6 +53,7 @@ export default function PlansScreen() {
     setDraft({
       failurePointId: failurePoint.id,
       label: failurePoint.label,
+      goalIds: [...failurePoint.goalIds],
       form: plan
         ? {
             triggerDescription: plan.triggerDescription,
@@ -58,13 +63,20 @@ export default function PlansScreen() {
         : EMPTY_FORM,
     });
 
+  const isDraftValid = (d: Draft) =>
+    d.label.trim().length > 0 && d.goalIds.length > 0 && isPlanFormValueValid(d.form);
+
   const saveDraft = async () => {
-    if (!draft) return;
+    if (!draft || !isDraftValid(draft)) return;
     const label = draft.label.trim();
-    if (!label || !isPlanFormValueValid(draft.form)) return;
 
     if (draft.failurePointId === null) {
-      const failurePoint: FailurePoint = { id: createId(), label, isPreset: false, goalIds: [] };
+      const failurePoint: FailurePoint = {
+        id: createId(),
+        label,
+        isPreset: false,
+        goalIds: draft.goalIds,
+      };
       const plan: IfThenPlan = {
         id: createId(),
         failurePointId: failurePoint.id,
@@ -77,7 +89,7 @@ export default function PlansScreen() {
       const failurePoint = failurePoints.find((fp) => fp.id === draft.failurePointId);
       const plan = plans.find((p) => p.failurePointId === draft.failurePointId);
       if (!failurePoint) return;
-      await upsertInCollection('failurePoints', { ...failurePoint, label });
+      await upsertInCollection('failurePoints', { ...failurePoint, label, goalIds: draft.goalIds });
       await upsertInCollection(
         'plans',
         plan
@@ -122,6 +134,37 @@ export default function PlansScreen() {
             placeholder="e.g. Doomscrolling after lunch"
           />
         </View>
+        <View style={styles.field}>
+          <ThemedText type="caption">Goals this pattern derails (pick at least one)</ThemedText>
+          {goals.map((goal) => {
+            const checked = draft.goalIds.includes(goal.id);
+            return (
+              <Pressable
+                key={goal.id}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked }}
+                onPress={() =>
+                  setDraft({
+                    ...draft,
+                    goalIds: checked
+                      ? draft.goalIds.filter((id) => id !== goal.id)
+                      : [...draft.goalIds, goal.id],
+                  })
+                }
+                style={[styles.goalRow, { borderColor: checked ? tint : border }]}>
+                <Ionicons
+                  name={checked ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={20}
+                  color={checked ? tint : icon}
+                />
+                <ThemedText style={styles.goalRowLabel}>{goal.title}</ThemedText>
+              </Pressable>
+            );
+          })}
+          {goals.length === 0 && (
+            <ThemedText type="caption">No goals yet — add one in the Goals tab first.</ThemedText>
+          )}
+        </View>
         <PlanForm value={draft.form} onChange={(form) => setDraft({ ...draft, form })} />
         <View style={styles.draftButtons}>
           <Pressable accessibilityRole="button" onPress={() => setDraft(null)} style={styles.cancel}>
@@ -130,7 +173,7 @@ export default function PlansScreen() {
           <PrimaryButton
             label="Save"
             onPress={saveDraft}
-            disabled={!draft.label.trim() || !isPlanFormValueValid(draft.form)}
+            disabled={!isDraftValid(draft)}
             style={styles.save}
           />
         </View>
@@ -191,7 +234,9 @@ export default function PlansScreen() {
         {!draft && (
           <PrimaryButton
             label="Add pattern"
-            onPress={() => setDraft({ failurePointId: null, label: '', form: EMPTY_FORM })}
+            onPress={() =>
+              setDraft({ failurePointId: null, label: '', goalIds: [], form: EMPTY_FORM })
+            }
           />
         )}
       </ScrollView>
@@ -223,6 +268,19 @@ const styles = StyleSheet.create({
   },
   field: {
     gap: Spacing.xs,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    borderRadius: Radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  goalRowLabel: {
+    flex: 1,
   },
   draftButtons: {
     flexDirection: 'row',
