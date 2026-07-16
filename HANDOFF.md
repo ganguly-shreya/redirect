@@ -1,10 +1,15 @@
-# HANDOFF — Redirect v1
+# HANDOFF — Redirect v2
 
-Redirect is a local-only habit/attention-correction app: users pair failure patterns
-("phone scrolling mid-work") with if-then plans (timer / vision-board image / custom
-message), fire them via an "I'm Stuck" button or daily check-in notifications, and rate
-afterwards whether the redirect helped. Expo SDK 54, Expo Go compatible, expo-router v6,
-TypeScript strict, no backend, no accounts.
+Redirect is a local-only habit/attention-correction app, now goals-first: users define
+goals (why it matters, target date, vision-board images, quotes) and link failure
+patterns ("phone scrolling mid-work") to them — a pattern can serve several goals, and
+every pattern must be linked to at least one goal. Each pattern gets an if-then plan
+(timer / visionBoard / custom message), fired via an "I'm Stuck" button or daily check-in
+notifications. When a pattern fires, the visionBoard action shows a random image *or*
+quote from the connected goals, always with the goal's title and why. Users rate
+Helped/Didn't on the action screen in the moment (Retro keeps the chips as fallback), and
+a daily recap notification reports how many times they won at redirecting their brain.
+Expo SDK 54, Expo Go compatible, expo-router v6, TypeScript strict, no backend, no accounts.
 
 This document is written for a model or developer with **zero context** on the build
 conversation. Read this file plus `git log --oneline` and you know everything.
@@ -14,26 +19,38 @@ conversation. Read this file plus `git log --oneline` and you know everything.
 ```
 app/
   _layout.tsx              Root layout: OnboardingProvider, Stack.Protected gate,
-                           notification handler + tap-response deep linking
-  onboarding.tsx           4-step wizard (patterns → plans → images → times), local useState
+                           notification handler + tap deep links (/stuck, /retro),
+                           foreground refresh of scheduled notifications
+  onboarding.tsx           4-step wizard (goals → plans → check-ins → recap time),
+                           local useState; goals own images/quotes/failure modes
   stuck.tsx                Plan picker modal ("what loop are you in?"), forwards source param
-  execute/[planId].tsx     Runs a plan's action; the ONLY place a TriggerLog is written
+  execute/[planId].tsx     Runs a plan's action; the ONLY place a TriggerLog is written;
+                           in-the-moment Helped/Didn't chips; timer ends in "Ship it!"
   (tabs)/
-    _layout.tsx            Bottom tabs: Home, Plans, Vision Board, Retro (Ionicons)
+    _layout.tsx            Bottom tabs: Home, Plans, Goals, Retro (Ionicons)
     index.tsx              Home: big "I'm Stuck" button, today's check-in times + count
-    plans.tsx              CRUD for FailurePoints + IfThenPlans (single-draft edit model)
-    vision-board.tsx       Image grid, add via picker, remove
-    retro.tsx              TriggerLogs grouped by week, outcome chips, per-plan ratios
+    plans.tsx              CRUD for FailurePoints + IfThenPlans (single-draft edit model);
+                           each pattern must link to ≥1 goal (checklist in the draft)
+    goals.tsx              Goals CRUD (replaces V1 vision-board tab): why, target date,
+                           images, quotes, linked failure modes per goal
+    retro.tsx              "Today" wins card, TriggerLogs grouped by week, outcome chips
+                           (fallback), per-plan ratios
 components/
   themed-text.tsx          ThemedText with type scale (title/subtitle/default/caption/link)
   themed-view.tsx          ThemedView (theme-aware background)
   themed-text-input.tsx    Theme-aware TextInput (card bg, hairline border)
   primary-button.tsx       Accent Pressable with haptic feedback; size="large" for "I'm Stuck"
   plan-form.tsx            Shared create/edit form for IfThenPlan + isPlanFormValueValid()
-  time-picker-row.tsx      One check-in time row (iOS inline picker, Android dialog)
-  countdown-timer.tsx      mm:ss countdown, timestamp-based (drift-free)
-  vision-image-grid.tsx    3-column grid (expo-image), optional remove badges
-  trigger-log-row.tsx      Retro row with helped/didn't-help chips
+  goal-editor.tsx          Shared goal form (onboarding + Goals tab): GoalDraft type,
+                           createEmptyGoalDraft(), isGoalDraftValid(); parent owns pools
+                           and persistence via callbacks
+  time-picker-row.tsx      One check-in/recap time row (iOS inline picker, Android dialog)
+  date-picker-row.tsx      Same pattern for calendar dates (goal target date, min today)
+  countdown-timer.tsx      mm:ss countdown, timestamp-based (drift-free), onComplete
+  vision-image-grid.tsx    3-column grid (expo-image); remove badges OR selectable mode
+                           (selectedIds/onToggleSelect, used by goal-editor)
+  outcome-chips.tsx        Helped/Didn't chip pair (execute screen + retro rows)
+  trigger-log-row.tsx      Retro row wrapping OutcomeChips
 hooks/
   use-color-scheme.ts      Re-export of RN useColorScheme (+ .web.ts hydration-safe variant)
   use-theme-color.ts       useThemeColor(props, colorName) — resolves palette per scheme
@@ -41,14 +58,16 @@ hooks/
                            runs storage migrations at app start
 lib/
   storage.ts               THE persistence layer: typed AsyncStorage wrapper + schemaVersion
-                           migrations. All reads/writes go through here.
-  plan-engine.ts           logTriggerFired / setTriggerOutcome / pickRandomVisionImage /
-                           computePlanStats — business logic, no UI
-  notifications.ts         THE scheduling layer: permissions, daily check-in scheduling,
-                           cancel-all; exports STUCK_URL used in notification payloads
+                           migrations (currently 2). All reads/writes go through here.
+  plan-engine.ts           logTriggerFired / setTriggerOutcome / pickGoalRedirectContent /
+                           pickRandomVisionImage / computePlanStats — business logic, no UI
+  notifications.ts         THE scheduling layer: permissions, rescheduleAllNotifications
+                           (daily check-ins + one-shot recap with today's count),
+                           refreshScheduledNotifications; exports STUCK_URL / RETRO_URL
   images.ts                Image persistence (copy picker results to document dir),
                            bundled-asset sentinel resolution, delete
-  presets.ts               5 preset failure patterns + suggested plans; instantiatePreset()
+  presets.ts               5 preset failure patterns + suggested plans + PRESET_QUOTES;
+                           instantiatePreset() / instantiateQuote()
   id.ts                    createId() — timestamp + random suffix
 types/
   models.ts                All domain types + StorageSchema (the storage key map)
@@ -58,6 +77,20 @@ assets/images/vision-board/  6 bundled default vision-board images (require()'d 
 app.json                   Expo config; scheme "redirect", typedRoutes + reactCompiler on
 ```
 
+## Data model (V2, goals-first)
+
+- **Goal** — title, `why` (one-liner), `targetDate` (ISO), `imageIds` → visionBoardImages,
+  `quoteIds` → quotes. Goals own the vision content.
+- **Quote** — text + isPreset; pool seeded from `PRESET_QUOTES` at onboarding (or lazily by
+  the Goals tab for pre-V2 installs).
+- **FailurePoint.goalIds** — many-to-many; **invariant: every pattern links to ≥1 goal.**
+  Enforced by construction in onboarding (patterns are created inside a goal's editor), by
+  the required goal checklist in the Plans tab draft, by the Goals tab blocking a goal
+  delete that would orphan a pattern, and by a confirm-then-delete when unlinking a
+  pattern's last goal in the goal editor. Only un-edited pre-V2 patterns can have `[]`.
+- `visionBoardImages` remains the storage pool for image records; goals reference into it.
+- `recapTime: CheckInTime` — the user's daily recap notification time.
+
 ## Data flow (the core loop, traced)
 
 1. **Tap "I'm Stuck"** — `app/(tabs)/index.tsx` renders a `PrimaryButton` whose `onPress`
@@ -66,132 +99,116 @@ app.json                   Expo config; scheme "redirect", typedRoutes + reactCo
    `lib/storage.getCollection`, joins them (one plan per failure point), and on row tap
    calls `router.push({ pathname: '/execute/[planId]', params: { planId } })`. If it was
    opened by a notification tap it also forwards `source: 'scheduled'`.
-3. **Execute** — `app/execute/[planId].tsx` reads `planId`/`source` from
-   `useLocalSearchParams`, loads the plan, and in a mount `useEffect` (ref-guarded against
-   double-mount) calls `logTriggerFired(planId, source)` from `lib/plan-engine.ts`.
-4. **Log write** — `logTriggerFired` creates a `TriggerLog` (`outcome: null`) and persists
-   it via `storage.upsertInCollection('triggerLogs', log)`. This is the only write point.
-5. **Action renders** — the same screen switches on `plan.actionType` (exhaustive switch):
-   `CountdownTimer` for `'timer'`, a random image via `pickRandomVisionImage` +
-   `getImageSource` for `'visionBoard'`, or the centered message for `'customMessage'`.
-   "Done" calls `router.dismissAll()` back to Home.
-6. **Retro read** — `app/(tabs)/retro.tsx` reloads `triggerLogs` in a `useFocusEffect`,
-   groups by `startOfWeek` (date-fns), and renders `TriggerLogRow`s. Tapping a chip calls
-   `setTriggerOutcome(logId, outcome)` in `lib/plan-engine.ts`, which rewrites that log via
-   `upsertInCollection`. `computePlanStats` derives the helped/didn't ratios shown on top.
+3. **Execute** — `app/execute/[planId].tsx` reads `planId`/`source`, loads the plan, and in
+   a mount `useEffect` (ref-guarded against double-mount) calls
+   `logTriggerFired(planId, source)`, keeping the returned log in state for the chips.
+4. **Log write** — `logTriggerFired` creates a `TriggerLog` (`outcome: null`), persists it
+   via `storage.upsertInCollection('triggerLogs', log)`, then calls
+   `refreshScheduledNotifications()` so the recap notification body carries today's count.
+5. **Action renders** — exhaustive switch on `plan.actionType`:
+   - `'visionBoard'`: `pickGoalRedirectContent(failurePoint, goals, images, quotes)` picks
+     a random image or quote across the pattern's connected goals (uniform over the union,
+     so both rotate); renders full-screen image + goal/why overlay, a quote card with
+     goal/why footer, or — when the goals have no content — an accent goal card (title,
+     why, days-to-go). Null content (pre-V2 pattern) falls back to the V1 random-pool image.
+   - `'timer'`: `CountdownTimer`; on completion swaps to the "Ship it! 🚀 / Progress over
+     Perfection!" celebration over a goal/vision image.
+   - `'customMessage'`: centered message.
+   The footer shows "Did this help?" + `OutcomeChips` (writes via `setTriggerOutcome`)
+   and "Done" (`router.dismissAll()`).
+6. **Retro read** — `app/(tabs)/retro.tsx` reloads `triggerLogs` on focus, shows the
+   "Today" wins card, groups logs by `startOfWeek`, and renders `TriggerLogRow`s whose
+   chips remain a fallback for runs not tagged in the moment. `computePlanStats` derives
+   the helped/didn't ratios.
 
-The notification path joins this loop at step 2: `lib/notifications.ts` schedules daily
-notifications whose payload is `data: { url: '/stuck' }`; the `useLastNotificationResponse`
-effect in `app/_layout.tsx` sees the tap and pushes `/stuck` with `source: 'scheduled'`.
+Notification paths join this loop: check-ins (`data.url = STUCK_URL`) open the plan picker
+with `source: 'scheduled'`; the daily recap (`data.url = RETRO_URL`) opens the Retro tab.
+Both are handled by the `useLastNotificationResponse` effect in `app/_layout.tsx`.
 
 ## Key decisions and why
 
 - **AsyncStorage over SQLite** — every collection is small, read whole, never queried
   relationally. JSON blobs behind the typed `lib/storage.ts` API are simpler and add no
   native dependency. The wrapper is the seam if this ever changes.
+- **Goals reference pools by id** (imageIds/quoteIds into shared collections) — images and
+  quotes can be shared across goals without duplication; deleting a goal never destroys
+  another goal's content.
+- **Pattern↔goal invariant enforced at the edges, not by the storage layer** — onboarding,
+  Plans tab validation, and Goals tab delete-blocking keep `goalIds` non-empty; storage
+  stays a dumb typed wrapper.
 - **Manual trigger over auto-detection** — screen-time/usage detection isn't possible in
-  Expo Go and is out of scope for v1. The button and any future detector converge on the
-  same `/execute/[planId]` route, so nothing needs restructuring later.
+  Expo Go and is out of scope. The button and any future detector converge on the same
+  `/execute/[planId]` route.
 - **Local-only notifications** — remote push needs a server and doesn't work in Expo Go on
-  Android since SDK 53. Daily repeating local notifications cover the check-in feature.
+  Android since SDK 53.
 - **Cancel-all rescheduling over id tracking** — this app owns every scheduled
-  notification, so `cancelAllScheduledNotificationsAsync()` + re-schedule is strictly
-  simpler than persisting and reconciling notification ids.
-- **`Stack.Protected` onboarding gate** — declarative: completing onboarding flips context
-  state in `use-onboarding-status.tsx` and the router re-routes; no imperative
-  `router.replace` choreography.
-- **`useFocusEffect` reloads over global state** — with a handful of small screens, each
-  tab re-reading storage on focus is simpler than a store, and can't go stale.
-- **Timestamp-based countdown** — recomputing remaining time from a fixed `endsAt` can't
-  drift and survives brief backgrounding, unlike a tick-decrement counter.
-- **`bundled:` URI sentinel** — bundled default images are `require()`'d module ids, not
-  files, so they can't have real URIs. The sentinel keeps `VisionBoardImage.uri: string`
-  per spec; `lib/images.getImageSource()` is the single resolver.
-- **Copy picked images to the document directory** — picker URIs point into the OS cache,
-  which can be purged. Base64-in-AsyncStorage was rejected (multi-MB values hit Android's
-  cursor-window limits). Uses the SDK 54 class-based expo-file-system API (`File`,
-  `Directory`, `Paths`) — the legacy promise API is at `expo-file-system/legacy`; don't mix.
-- **actionConfig as one optional-fields bag** (not a discriminated union) — the spec fixes
-  the JSON shape, and it lets plan-form keep old field values when the user toggles action
-  types. Safety for new action types comes from the exhaustive `never` switches instead.
-- **Schema versioning from day one** — `redirect/schemaVersion` + `runMigrations()` in
-  `lib/storage.ts` (called from `use-onboarding-status.tsx`) so V2 shape changes migrate
-  old installs in one place.
-
-## Explicitly out of scope (and where the hook goes)
-
-- **Calendar sync** — would live in `lib/notifications.ts`: `rescheduleCheckIns()` is the
-  single place check-in times become scheduled events; a calendar integration either feeds
-  times into it or mirrors them to calendar events alongside it.
-- **Notion sync** — would wrap `lib/storage.ts`: its typed get/set functions are the only
-  persistence path, so a sync layer replaces/decorates those internals while keeping the
-  exported API identical.
-- **Automatic screen-time detection** — would replace the manual button's `onPress` in
-  `app/(tabs)/index.tsx` with a background trigger that navigates to the same
-  `/execute/[planId]` route (or calls `logTriggerFired` in `lib/plan-engine.ts` directly).
-  Add `'automatic'` to `TriggerSource` in `types/models.ts`. Requires a dev build — usage
-  APIs don't exist in Expo Go.
-- **Payments** — provider/paywall wrapping would slot into `app/_layout.tsx` around
-  `RootNavigator`, next to `OnboardingProvider`.
-- **Backend/auth** — swap the internals of `lib/storage.ts` for an API client; every
-  screen already goes through its five functions, so the API surface is the contract.
+  notification; `rescheduleAllNotifications` cancel-alls and re-schedules check-ins + recap
+  in one place.
+- **Recap is a one-shot DATE trigger with the count baked in** — local notifications can't
+  compute content at fire time, so `refreshScheduledNotifications()` re-schedules it with
+  today's count after every log write and on every app foreground. Accepted limitation: on
+  a day the app is never opened, no recap fires (there are no wins to report; if the next
+  occurrence is tomorrow, the generic body is used).
+- **`Stack.Protected` onboarding gate**; **`useFocusEffect` reloads over global state**;
+  **timestamp-based countdown**; **`bundled:` URI sentinel**; **copy picked images to the
+  document directory**; **actionConfig as one optional-fields bag**; **schema versioning
+  from day one** — all unchanged from V1 (see git history for the original rationale).
+- **Goal editor is controlled + callback-driven** — `GoalEditor` edits a `GoalDraft` and
+  asks its parent to grow the shared pools (pick images, add quotes, instantiate
+  patterns). Onboarding keeps everything in component state until Finish; the Goals tab
+  persists pools immediately but holds draft-created patterns pending until Save, so
+  Cancel leaves storage consistent.
 
 ## Extending the model (adding a new actionType)
 
-The compiler walks you through it — after step 1, `npx tsc --noEmit` fails at every site
-that must handle the new type:
-
-1. `types/models.ts` — add the variant to the `ActionType` union and any new config
-   fields (optional) to `ActionConfig`.
-2. `app/execute/[planId].tsx` — add a `case` to the `renderAction()` switch (the `never`
-   default is currently failing compilation here).
-3. `components/plan-form.tsx` — add the option to `ACTION_TYPES`, a config-input `case`
-   to `renderConfig()`, and a validation `case` to `isPlanFormValueValid()`.
-4. Optional: add a preset using it in `lib/presets.ts`, and a summary line in the plan
-   card rendering in `app/(tabs)/plans.tsx` (that one is an if/else chain, not exhaustive).
-
-No storage changes needed — plans serialize as-is. If the new config fields need defaults
-on existing stored plans, add a migration in `MIGRATIONS` in `lib/storage.ts`.
+Unchanged from V1: add the variant in `types/models.ts`, a render case in
+`app/execute/[planId].tsx`, options/config/validation in `components/plan-form.tsx`,
+optionally a preset in `lib/presets.ts`. `npx tsc --noEmit` fails at every site that must
+handle the new type until you do.
 
 ## Known rough edges
 
-- **Check-in times aren't editable after onboarding.** The data (`checkInTimes`) and API
-  (`rescheduleCheckIns`) exist; there's just no settings UI. First candidate for a small
-  V1.x feature — reuse `components/time-picker-row.tsx`.
+- **Check-in and recap times aren't editable after onboarding.** Data + API exist
+  (`checkInTimes`, `recapTime`, `rescheduleAllNotifications`); no settings UI yet. Reuse
+  `components/time-picker-row.tsx`.
 - **Stored image URIs are absolute** (`file:///...Documents/vision-board/...`). On iOS the
-  app container path can change across reinstalls/updates, which would orphan them.
-  Acceptable for local-only v1; fix = store relative paths and resolve against
-  `Paths.document` at read time in `lib/images.ts`.
-- **Android daily notifications can arrive late** — inexact alarms/Doze; that's OS
-  behavior, not a bug.
-- **`ActionConfig.imageId` is honored by the execute screen but no UI sets it** — the
-  vision-board action always shows a random image today; plan-form doesn't offer picking a
-  specific one.
-- **`caption` on VisionBoardImage is in the model but unused** by any UI.
-- **One plan per failure point is assumed** by `stuck.tsx` and `plans.tsx`
-  (`plans.find(p => p.failurePointId === ...)`), though the data model would allow more.
-- **Dev double-mount guards** (`loggedRef` in execute, `handledDate` in `_layout`) are
-  load-bearing — removing them causes duplicate TriggerLogs / repeated deep links.
+  container path can change across reinstalls, orphaning them. Fix = store relative paths
+  and resolve against `Paths.document` in `lib/images.ts`.
+- **Pre-V2 installs**: migrated patterns have `goalIds: []` and fall back to V1 redirect
+  behavior until edited (the Plans tab then forces a goal link). A migration can't invent
+  goals.
+- **Unreferenced pool content isn't garbage-collected** — images/quotes deselected from
+  every goal stay in their pools (harmless; the V1 fallback still uses the image pool).
+- **Android daily notifications can arrive late** — inexact alarms/Doze; OS behavior.
+- **`ActionConfig.imageId` is honored by the execute screen's fallback path but no UI sets
+  it**; goal-driven content has effectively superseded it.
+- **One plan per failure point is assumed** by `stuck.tsx` and `plans.tsx`, though the
+  data model would allow more.
+- **Dev double-mount guards** (`loggedRef`/`logRef` in execute, `handledDate` in
+  `_layout`) are load-bearing — removing them causes duplicate TriggerLogs / repeated
+  deep links.
 - **No test suite** — verification is the manual sequence below plus strict TypeScript.
 
 ## How to verify a change didn't break the core loop
 
-No test suite in v1 — run this manually in Expo Go after any nontrivial change:
+No test suite — run this manually in Expo Go after any nontrivial change:
 
-1. **Reset:** delete the app from Expo Go (or bump nothing and reinstall) so onboarding
-   shows. (Dev shortcut: call `resetOnboarding()` from `useOnboardingStatus`, but note it
-   only flips the flag — old data remains.)
-2. **Onboard:** pick at least one preset pattern → step 2 shows its suggested plan
-   (edit it or accept as-is) → step 3 keep the 6 default images → step 4 set one check-in
-   time ~2 minutes in the future → Finish → allow notifications → you should land on Home.
-3. **Trigger:** tap "I'm Stuck" → the pattern you picked is listed → tap it → the action
-   runs (timer counts down / image appears full-screen / message shows) → Done returns Home.
-4. **Retro:** open the Retro tab → this week's group shows the log entry → tap "Helped" →
-   the "What's working" ratio card appears/updates.
-5. **Notification:** background the app, wait for the scheduled time → notification
-   arrives → tapping it opens the plan picker (`/stuck`); a plan run from there shows up in
-   Retro with a bell icon (source `scheduled`).
-6. **Persistence:** force-quit and relaunch → still lands on Home (not onboarding), plans
-   and logs intact.
-7. **Static checks:** `npx expo start` once (regenerates typed routes), then
+1. **Reset:** delete the app from Expo Go so onboarding shows.
+2. **Onboard:** add a goal (title, why, target date; select images; pick a quote; link two
+   failure modes — one preset, one custom) → step 2 shows a plan per linked pattern →
+   step 3 set one check-in time ~2 min out → step 4 set a recap time ~4 min out →
+   Finish → allow notifications → land on Home.
+3. **Trigger:** tap "I'm Stuck" → pick the pattern → a visionBoard plan shows a goal
+   image or quote with the goal + why (repeat runs to see rotation); a goal with no
+   images/quotes shows the accent goal card. Tag "Helped" on the action screen → Done.
+4. **Timer:** run a 1-min timer plan to the end → "Ship it! / Progress over Perfection!".
+5. **Retro:** the "Today" card counts the runs; the in-the-moment tag is already set; an
+   untagged run can still be tagged via the row chips.
+6. **Goals/Plans invariants:** a new pattern in the Plans tab can't be saved without a
+   goal; deleting a goal whose patterns have no other goal is blocked.
+7. **Notifications:** background the app → check-in arrives → tap opens the plan picker
+   (`/stuck`); recap arrives with today's count → tap opens Retro.
+8. **Persistence:** force-quit and relaunch → still lands on Home, data intact (schema v2
+   migration is idempotent).
+9. **Static checks:** `npx expo start` once (regenerates typed routes), then
    `npx tsc --noEmit` must pass clean.
