@@ -313,17 +313,27 @@ export default function OnboardingScreen() {
             <ThemedText type="caption">
               Each failure pattern gets an if-then plan. Accept the suggestion or tweak it.
             </ThemedText>
-            {linkedPatterns.map((s) => (
-              <View
-                key={s.failurePoint.id}
-                style={[styles.planCard, { backgroundColor: card, borderColor: border }]}>
-                <ThemedText type="defaultSemiBold">{s.failurePoint.label}</ThemedText>
-                <PlanForm
-                  value={s.plan}
-                  onChange={(value) => updatePlan(s.failurePoint.id, { ...s.plan, ...value })}
-                />
-              </View>
-            ))}
+            {linkedPatterns.map((s) => {
+              const invalid = !isPlanFormValueValid(s.plan);
+              return (
+                <View
+                  key={s.failurePoint.id}
+                  style={[
+                    styles.planCard,
+                    { backgroundColor: card, borderColor: border },
+                    // A red card makes the blocking pattern findable even when
+                    // the invalid field is scrolled off-screen.
+                    invalid && { borderColor: danger, borderWidth: 1.5 },
+                  ]}>
+                  <ThemedText type="defaultSemiBold">{s.failurePoint.label}</ThemedText>
+                  <PlanForm
+                    value={s.plan}
+                    onChange={(value) => updatePlan(s.failurePoint.id, { ...s.plan, ...value })}
+                    showErrors
+                  />
+                </View>
+              );
+            })}
           </View>
         );
       case 2:

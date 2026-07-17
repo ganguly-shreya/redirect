@@ -22,7 +22,9 @@ app/
                            notification handler + tap deep links (/stuck, /retro),
                            foreground refresh of scheduled notifications
   onboarding.tsx           4-step wizard (goals → plans → check-ins → recap time),
-                           local useState; goals own images/quotes/failure modes
+                           local useState; goals own images/quotes/failure modes;
+                           step 2 red-outlines invalid plan cards/fields (PlanForm
+                           showErrors) since Continue is disabled until all are valid
   stuck.tsx                Plan picker modal ("what loop are you in?"), forwards source param
   execute/[planId].tsx     Runs a plan's action; the ONLY place a TriggerLog is written;
                            in-the-moment Helped/Didn't chips; timer ends in "Ship it!"
@@ -42,13 +44,16 @@ components/
   themed-view.tsx          ThemedView (theme-aware background)
   themed-text-input.tsx    Theme-aware TextInput (card bg, hairline border)
   primary-button.tsx       Accent Pressable with haptic feedback; size="large" for "I'm Stuck"
-  plan-form.tsx            Shared create/edit form for IfThenPlan + isPlanFormValueValid()
+  plan-form.tsx            Shared create/edit form for IfThenPlan + isPlanFormValueValid();
+                           showErrors prop turns invalid fields red ("— required" labels)
+                           so a disabled Continue/Save never leaves the user guessing
   goal-editor.tsx          Shared goal form (onboarding + Goals tab): GoalDraft type,
                            createEmptyGoalDraft(), isGoalDraftValid(); parent owns pools
                            and persistence via callbacks
   time-picker-row.tsx      One check-in/recap time row (iOS inline picker, Android dialog)
   date-picker-row.tsx      Same pattern for calendar dates (goal target date, min today)
-  countdown-timer.tsx      mm:ss countdown, timestamp-based (drift-free), onComplete
+  countdown-timer.tsx      mm:ss countdown, timestamp-based (drift-free), onComplete;
+                           fires lib/alarm.ts playTimerCompletionAlert() on completion
   vision-image-grid.tsx    3-column grid (expo-image); remove badges OR selectable mode
                            (selectedIds/onToggleSelect, used by goal-editor)
   outcome-chips.tsx        Helped/Didn't chip pair (execute screen + retro rows)
@@ -68,6 +73,14 @@ lib/
                            refreshScheduledNotifications; exports STUCK_URL / RETRO_URL
   images.ts                Image persistence (copy picker results to document dir),
                            bundled-asset sentinel resolution, delete
+  alarm.ts                 playTimerCompletionAlert(): haptic + looping vibration +
+                           looping bundled alarm (expo-audio, playsInSilentMode: false —
+                           ringer on = sound + vibration, silent switch = vibration
+                           only); nags until stopTimerCompletionAlert() (execute screen:
+                           Done, Helped/Didn't, or unmount) or a 10-min cap.
+                           Module-level reused player, NOT a hook: the countdown
+                           unmounts at completion (celebration view swaps in) and a
+                           hook player would be released mid-sound.
   presets.ts               5 preset failure patterns + suggested plans + PRESET_QUOTES;
                            instantiatePreset() / instantiateQuote()
   id.ts                    createId() — timestamp + random suffix
@@ -76,6 +89,7 @@ types/
 constants/
   theme.ts                 Colors (light/dark), Spacing, Radius — the whole design system
 assets/images/vision-board/  6 bundled default vision-board images (require()'d in lib/images.ts)
+assets/sounds/timer-alarm.wav  generated triple-beep alarm played on timer completion
 app.json                   Expo config; scheme "redirect", typedRoutes + reactCompiler on
 ```
 
@@ -146,6 +160,10 @@ Both are handled by the `useLastNotificationResponse` effect in `app/_layout.tsx
 - **Cancel-all rescheduling over id tracking** — this app owns every scheduled
   notification; `rescheduleAllNotifications` cancel-alls and re-schedules check-ins + recap
   in one place.
+- **Timer completion defers to the ringer switch** — expo-audio with
+  `playsInSilentMode: false` plus an always-on vibration pattern means a silenced phone
+  stays silent (vibrate only) and a ringing phone gets the alarm; no in-app sound setting
+  to build or explain.
 - **Recap is a one-shot DATE trigger with the count baked in** — local notifications can't
   compute content at fire time, so `refreshScheduledNotifications()` re-schedules it with
   today's count after every log write and on every app foreground. Accepted limitation: on
@@ -205,7 +223,9 @@ No test suite — run this manually in Expo Go after any nontrivial change:
 3. **Trigger:** tap "I'm Stuck" → pick the pattern → a visionBoard plan shows a goal
    image or quote with the goal + why (repeat runs to see rotation); a goal with no
    images/quotes shows the accent goal card. Tag "Helped" on the action screen → Done.
-4. **Timer:** run a 1-min timer plan to the end → "Ship it! / Progress over Perfection!".
+4. **Timer:** run a 1-min timer plan to the end → alarm beeps (or vibration only with the
+   silent switch on) loop over "Ship it! / Progress over Perfection!" until Done or a
+   Helped/Didn't tap silences them (10-min cap).
 5. **Retro:** the "Today" card counts the runs; the in-the-moment tag is already set; an
    untagged run can still be tagged via the row chips.
 6. **Goals/Plans invariants:** a new pattern in the Plans tab can't be saved without a

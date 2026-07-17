@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CountdownTimer } from '@/components/countdown-timer';
+import { stopTimerCompletionAlert } from '@/lib/alarm';
 import { OutcomeChips } from '@/components/outcome-chips';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
@@ -116,10 +117,18 @@ export default function ExecuteScreen() {
     };
   }, [planId, source]);
 
+  // The completion alert loops until acknowledged; any way off this screen
+  // (Done, an outcome tap, or unmounting some other way) must silence it.
+  useEffect(() => stopTimerCompletionAlert, []);
+
   // Pops the execute fullScreenModal and the stuck modal in one go.
-  const done = () => router.dismissAll();
+  const done = () => {
+    stopTimerCompletionAlert();
+    router.dismissAll();
+  };
 
   const markOutcome = async (outcome: TriggerOutcome) => {
+    stopTimerCompletionAlert();
     if (!log) return;
     await setTriggerOutcome(log.id, outcome);
     setLog({ ...log, outcome });

@@ -1,8 +1,8 @@
-import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { playTimerCompletionAlert } from '@/lib/alarm';
 
 type CountdownTimerProps = {
   durationMinutes: number;
@@ -24,7 +24,7 @@ export function CountdownTimer({ durationMinutes, onComplete }: CountdownTimerPr
       setRemainingMs(remaining);
       if (remaining === 0) {
         clearInterval(interval);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        playTimerCompletionAlert();
         onCompleteRef.current?.();
       }
     }, 500);

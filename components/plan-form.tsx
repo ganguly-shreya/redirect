@@ -15,6 +15,9 @@ export type PlanFormValue = {
 type PlanFormProps = {
   value: PlanFormValue;
   onChange: (value: PlanFormValue) => void;
+  // Highlight the fields that keep isPlanFormValueValid false, so a disabled
+  // Continue/Save button never leaves the user guessing what's missing.
+  showErrors?: boolean;
 };
 
 const ACTION_TYPES: { type: ActionType; label: string }[] = [
@@ -44,21 +47,30 @@ export function isPlanFormValueValid(value: PlanFormValue): boolean {
 // the Plans tab (create/edit). Switching actionType keeps the old config fields
 // around so toggling back doesn't lose input; validation only reads the fields
 // relevant to the active type.
-export function PlanForm({ value, onChange }: PlanFormProps) {
+export function PlanForm({ value, onChange, showErrors = false }: PlanFormProps) {
   const tint = useThemeColor({}, 'tint');
   const card = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
+  const danger = useThemeColor({}, 'danger');
 
   const setConfig = (patch: Partial<ActionConfig>) =>
     onChange({ ...value, actionConfig: { ...value.actionConfig, ...patch } });
 
+  const errorBorder = { borderColor: danger, borderWidth: 1.5 };
+  const fieldLabel = (label: string, invalid: boolean) => (
+    <ThemedText type="caption" style={invalid ? { color: danger } : undefined}>
+      {invalid ? `${label} — required` : label}
+    </ThemedText>
+  );
+
   const renderConfig = () => {
     switch (value.actionType) {
-      case 'timer':
+      case 'timer': {
+        const durationInvalid = showErrors && (value.actionConfig.durationMinutes ?? 0) <= 0;
         return (
           <>
             <View style={styles.field}>
-              <ThemedText type="caption">Timer length (minutes)</ThemedText>
+              {fieldLabel('Timer length (minutes)', durationInvalid)}
               <ThemedTextInput
                 keyboardType="number-pad"
                 value={value.actionConfig.durationMinutes?.toString() ?? ''}
@@ -67,6 +79,7 @@ export function PlanForm({ value, onChange }: PlanFormProps) {
                   setConfig({ durationMinutes: Number.isNaN(parsed) ? undefined : parsed });
                 }}
                 placeholder="e.g. 10"
+                style={durationInvalid && errorBorder}
               />
             </View>
             <View style={styles.field}>
@@ -79,23 +92,27 @@ export function PlanForm({ value, onChange }: PlanFormProps) {
             </View>
           </>
         );
+      }
       case 'visionBoard':
         return (
           <ThemedText type="caption">Remind me of my vision for the future.</ThemedText>
         );
-      case 'customMessage':
+      case 'customMessage': {
+        const messageInvalid =
+          showErrors && (value.actionConfig.message ?? '').trim().length === 0;
         return (
           <View style={styles.field}>
-            <ThemedText type="caption">Message to show yourself</ThemedText>
+            {fieldLabel('Message to show yourself', messageInvalid)}
             <ThemedTextInput
               multiline
               value={value.actionConfig.message ?? ''}
               onChangeText={(text) => setConfig({ message: text })}
               placeholder="e.g. Done beats perfect. Ship it."
-              style={styles.multiline}
+              style={[styles.multiline, messageInvalid && errorBorder]}
             />
           </View>
         );
+      }
       default: {
         const _exhaustive: never = value.actionType;
         return _exhaustive;
@@ -106,13 +123,19 @@ export function PlanForm({ value, onChange }: PlanFormProps) {
   return (
     <View style={styles.container}>
       <View style={styles.field}>
-        <ThemedText type="caption">If… (what does getting stuck look like?)</ThemedText>
+        {fieldLabel(
+          'If… (what does getting stuck look like?)',
+          showErrors && value.triggerDescription.trim().length === 0
+        )}
         <ThemedTextInput
           multiline
           value={value.triggerDescription}
           onChangeText={(text) => onChange({ ...value, triggerDescription: text })}
           placeholder="e.g. If I catch myself scrolling mid-work…"
-          style={styles.multiline}
+          style={[
+            styles.multiline,
+            showErrors && value.triggerDescription.trim().length === 0 && errorBorder,
+          ]}
         />
       </View>
 

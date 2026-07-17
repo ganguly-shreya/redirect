@@ -13,7 +13,7 @@ export const PRESETS: readonly PresetDefinition[] = [
       triggerDescription: 'If I catch myself scrolling my phone mid-deep-work…',
       actionType: 'timer',
       actionConfig: {
-        durationMinutes: 10,
+        durationMinutes: 60,
         message: 'Phone face-down until the timer ends — the feed can wait.',
       },
     },
